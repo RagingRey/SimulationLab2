@@ -104,7 +104,7 @@
       <WarningLevel>Level3</WarningLevel>
       <Optimization>Disabled</Optimization>
       <PreprocessorDefinitions>WIN32;_DEBUG;_CONSOLE;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>$(VULKAN_SDK)\Include;..\GLFW\include</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(VULKAN_SDK)\Include;..\GLFW\include;$(ProjectDir)ThirdParty\imgui</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <EnableModules>true</EnableModules>
     </ClCompile>
@@ -160,7 +160,15 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="Lab_Tutorial_Template.cpp" />
+    <ClCompile Include="Application\SandboxApplication.cpp" />
+    <ClCompile Include="main.cpp" />
+    <ClCompile Include="ThirdParty\imgui\backends\imgui_impl_glfw.cpp" />
+    <ClCompile Include="ThirdParty\imgui\backends\imgui_impl_vulkan.cpp" />
+    <ClCompile Include="ThirdParty\imgui\imgui.cpp" />
+    <ClCompile Include="ThirdParty\imgui\imgui_draw.cpp" />
+    <ClCompile Include="ThirdParty\imgui\imgui_tables.cpp" />
+    <ClCompile Include="ThirdParty\imgui\imgui_widgets.cpp" />
+    <ClCompile Include="UI\ImGuiLayer.cpp" />
   </ItemGroup>
   <ItemGroup>
     <CustomBuild Include="Shaders\shader.frag">
@@ -175,6 +183,13 @@
       <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">glslc ".\Shaders\shader.vert" -o ".\Shaders\vert.spv"</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">.\Shaders\vert.spv</Outputs>
     </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="Application\SandboxApplication.h" />
+    <ClInclude Include="Renderer\VulkanCore.h" />
+    <ClInclude Include="Scenarios\Scenario.h" />
+    <ClInclude Include="Scenarios\SphereDropScenario.h" />
+    <ClInclude Include="ThirdParty\imgui\imconfig.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
