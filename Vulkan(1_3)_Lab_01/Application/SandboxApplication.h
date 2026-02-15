@@ -10,6 +10,9 @@
 #include "../Renderer/VulkanCore.h"
 #include "../Scenarios/Scenario.h"
 #include "../UI/ImGuiLayer.h"
+#include "../Renderer/MeshGenerator.h"
+#include "../Renderer/Camera.h"
+
 
 #include <memory>
 #include <vector>
@@ -38,6 +41,7 @@ struct UniformBufferObject {
     alignas(16) glm::mat4 model;
     alignas(16) glm::mat4 view;
     alignas(16) glm::mat4 proj;
+    alignas(16) glm::vec3 lightDir;
 };
 
 class SandboxApplication {
@@ -72,6 +76,20 @@ public:
     // --- Vulkan Access for Scenarios ---
     VkDevice GetDevice() const { return m_Device; }
     VkCommandPool GetCommandPool() const { return m_CommandPool; }
+
+    struct MeshBuffers {
+        VkBuffer vertexBuffer;
+        VkBuffer indexBuffer;
+        VkDeviceMemory vertexMemory;
+        VkDeviceMemory indexMemory;
+        uint32_t indexCount;
+    };
+
+    MeshBuffers UploadMesh(const Mesh& mesh);
+    void DestroyMeshBuffers(const MeshBuffers& buffers);
+    VkPipelineLayout GetPipelineLayout() const { return m_PipelineLayout; }
+
+    void ProcessInput(float deltaTime);
 
 private:
     // --- Initialization ---
@@ -193,4 +211,14 @@ private:
 
     // --- Camera ---
     CameraView m_CameraView = CameraView::Perspective;
+
+    Camera m_Camera;
+
+    bool m_FirstMouse = true;
+    double m_LastMouseX = WIDTH / 2.0;
+    double m_LastMouseY = HEIGHT / 2.0;
+    bool m_CameraEnabled = true;
+
+    // Add callback declaration
+    static void mouseCallback(GLFWwindow* window, double xpos, double ypos);
 };

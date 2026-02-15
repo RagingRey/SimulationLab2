@@ -111,6 +111,17 @@ void ImGuiLayer::RenderControlPanel(SandboxApplication* app) {
     // === Playback Controls ===
     ImGui::Text("Playback");
     
+    ImGui::Separator();
+    ImGui::Text("Camera Controls");
+    ImGui::Text("Hold RIGHT MOUSE to look around");
+    ImGui::Text("WASD: Move | Space/Ctrl: Up/Down");
+
+    // Camera settings (getters in SandboxApplication)
+    // float speed = app->GetCameraSpeed();
+    // if (ImGui::SliderFloat("Camera Speed", &speed, 1.0f, 20.0f)) {
+    //     app->SetCameraSpeed(speed);
+    // }
+
     if (ImGui::Button(app->IsPaused() ? "Play" : "Pause", ImVec2(60, 0))) {
         app->TogglePause();
     }

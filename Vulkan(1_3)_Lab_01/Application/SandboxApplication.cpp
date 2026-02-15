@@ -113,6 +113,9 @@ void SandboxApplication::initWindow() {
     m_Window = glfwCreateWindow(WIDTH, HEIGHT, "Physics Sandbox", nullptr, nullptr);
     glfwSetWindowUserPointer(m_Window, this);
     glfwSetFramebufferSizeCallback(m_Window, framebufferResizeCallback);
+    glfwSetCursorPosCallback(m_Window, mouseCallback);
+
+    m_Camera.SetPosition(glm::vec3(0.0f, 5.0f, 10.0f));
 }
 
 void SandboxApplication::initVulkan() {
@@ -164,6 +167,8 @@ void SandboxApplication::mainLoop() {
         auto currentTime = std::chrono::high_resolution_clock::now();
         float deltaTime = std::chrono::duration<float>(currentTime - lastTime).count();
         lastTime = currentTime;
+
+        ProcessInput(deltaTime);
 
         // Fixed timestep update
         if (m_CurrentScenario && !m_IsPaused) {
@@ -514,10 +519,17 @@ void SandboxApplication::createGraphicsPipeline() {
     dynamicState.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
     dynamicState.pDynamicStates = dynamicStates.data();
 
+    VkPushConstantRange pushConstantRange{};
+    pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    pushConstantRange.offset = 0;
+    pushConstantRange.size = sizeof(glm::mat4);
+
     VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
     pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
     pipelineLayoutInfo.setLayoutCount = 1;
     pipelineLayoutInfo.pSetLayouts = &m_DescriptorSetLayout;
+    pipelineLayoutInfo.pushConstantRangeCount = 1;  // ADD THIS
+    pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;  // ADD THIS
 
     if (vkCreatePipelineLayout(m_Device, &pipelineLayoutInfo, nullptr, &m_PipelineLayout) != VK_SUCCESS) {
         throw std::runtime_error("Failed to create pipeline layout!");
@@ -888,11 +900,13 @@ void SandboxApplication::updateUniformBuffer(uint32_t currentImage) {
     auto currentTime = std::chrono::high_resolution_clock::now();
     float time = std::chrono::duration<float>(currentTime - startTime).count();
 
+    float aspect = m_SwapChainExtent.width / (float)m_SwapChainExtent.height;
+    m_Camera.SetPerspective(glm::radians(45.0f), aspect, 0.1f, 100.0f);
+
     UniformBufferObject ubo{};
-    ubo.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(45.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-    ubo.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-    ubo.proj = glm::perspective(glm::radians(45.0f), m_SwapChainExtent.width / (float)m_SwapChainExtent.height, 0.1f, 10.0f);
-    ubo.proj[1][1] *= -1;
+    ubo.model = glm::mat4(1.0f);
+    ubo.view = m_Camera.GetViewMatrix();
+    ubo.proj = m_Camera.GetProjectionMatrix();
 
     memcpy(m_UniformBuffersMapped[currentImage], &ubo, sizeof(ubo));
 }
@@ -1122,4 +1136,113 @@ uint32_t SandboxApplication::findMemoryType(uint32_t typeFilter, VkMemoryPropert
         }
     }
     throw std::runtime_error("Failed to find suitable memory type!");
+}
+
+SandboxApplication::MeshBuffers SandboxApplication::UploadMesh(const Mesh& mesh) {
+    MeshBuffers buffers{};
+    buffers.indexCount = static_cast<uint32_t>(mesh.indices.size());
+
+    // Upload vertices
+    VkDeviceSize vertexBufferSize = sizeof(MeshVertex) * mesh.vertices.size();
+    VkBuffer stagingBuffer;
+    VkDeviceMemory stagingMemory;
+
+    createBuffer(vertexBufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+        stagingBuffer, stagingMemory);
+
+    void* data;
+    vkMapMemory(m_Device, stagingMemory, 0, vertexBufferSize, 0, &data);
+    memcpy(data, mesh.vertices.data(), vertexBufferSize);
+    vkUnmapMemory(m_Device, stagingMemory);
+
+    createBuffer(vertexBufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, buffers.vertexBuffer, buffers.vertexMemory);
+    copyBuffer(stagingBuffer, buffers.vertexBuffer, vertexBufferSize);
+
+    vkDestroyBuffer(m_Device, stagingBuffer, nullptr);
+    vkFreeMemory(m_Device, stagingMemory, nullptr);
+
+    // Upload indices
+    VkDeviceSize indexBufferSize = sizeof(uint32_t) * mesh.indices.size();
+    createBuffer(indexBufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+        stagingBuffer, stagingMemory);
+
+    vkMapMemory(m_Device, stagingMemory, 0, indexBufferSize, 0, &data);
+    memcpy(data, mesh.indices.data(), indexBufferSize);
+    vkUnmapMemory(m_Device, stagingMemory);
+
+    createBuffer(indexBufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, buffers.indexBuffer, buffers.indexMemory);
+    copyBuffer(stagingBuffer, buffers.indexBuffer, indexBufferSize);
+
+    vkDestroyBuffer(m_Device, stagingBuffer, nullptr);
+    vkFreeMemory(m_Device, stagingMemory, nullptr);
+
+    return buffers;
+}
+
+void SandboxApplication::DestroyMeshBuffers(const MeshBuffers& buffers) {
+    vkDestroyBuffer(m_Device, buffers.vertexBuffer, nullptr);
+    vkFreeMemory(m_Device, buffers.vertexMemory, nullptr);
+    vkDestroyBuffer(m_Device, buffers.indexBuffer, nullptr);
+    vkFreeMemory(m_Device, buffers.indexMemory, nullptr);
+}
+
+void SandboxApplication::ProcessInput(float deltaTime)
+{
+    // Toggle camera control with right mouse button
+    if (glfwGetMouseButton(m_Window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS) {
+        if (!m_CameraEnabled) {
+            // Just enabled, reset mouse position
+            double xpos, ypos;
+            glfwGetCursorPos(m_Window, &xpos, &ypos);
+            m_LastMouseX = xpos;
+            m_LastMouseY = ypos;
+            m_FirstMouse = true;
+        }
+        glfwSetInputMode(m_Window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+        m_CameraEnabled = true;
+    }
+    else {
+        glfwSetInputMode(m_Window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+        m_CameraEnabled = false;
+        return;  // Don't process camera movement when disabled
+    }
+
+    // Camera movement (only executes when right mouse is held)
+    if (glfwGetKey(m_Window, GLFW_KEY_W) == GLFW_PRESS)
+        m_Camera.ProcessKeyboard(0, deltaTime);
+    if (glfwGetKey(m_Window, GLFW_KEY_S) == GLFW_PRESS)
+        m_Camera.ProcessKeyboard(1, deltaTime);
+    if (glfwGetKey(m_Window, GLFW_KEY_A) == GLFW_PRESS)
+        m_Camera.ProcessKeyboard(2, deltaTime);
+    if (glfwGetKey(m_Window, GLFW_KEY_D) == GLFW_PRESS)
+        m_Camera.ProcessKeyboard(3, deltaTime);
+    if (glfwGetKey(m_Window, GLFW_KEY_SPACE) == GLFW_PRESS)
+        m_Camera.ProcessKeyboard(4, deltaTime);
+    if (glfwGetKey(m_Window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS)
+        m_Camera.ProcessKeyboard(5, deltaTime);
+}
+
+void SandboxApplication::mouseCallback(GLFWwindow* window, double xpos, double ypos) {
+    auto app = reinterpret_cast<SandboxApplication*>(glfwGetWindowUserPointer(window));
+
+    if (!app->m_CameraEnabled) return;
+
+    if (app->m_FirstMouse) {
+        app->m_LastMouseX = xpos;
+        app->m_LastMouseY = ypos;
+        app->m_FirstMouse = false;
+        return;  // Skip first frame to avoid jump
+    }
+
+    float xoffset = static_cast<float>(xpos - app->m_LastMouseX);
+    float yoffset = static_cast<float>(app->m_LastMouseY - ypos);
+
+    app->m_LastMouseX = xpos;
+    app->m_LastMouseY = ypos;
+
+    app->m_Camera.ProcessMouseMovement(xoffset, yoffset);
 }

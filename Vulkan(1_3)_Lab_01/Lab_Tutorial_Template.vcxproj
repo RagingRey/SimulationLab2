@@ -116,6 +116,10 @@
       <EntryPointSymbol>mainCRTStartup</EntryPointSymbol>
       <IgnoreSpecificDefaultLibraries>MSVCRT.lib;%(IgnoreSpecificDefaultLibraries)</IgnoreSpecificDefaultLibraries>
     </Link>
+    <PreBuildEvent>
+      <Command>"$(VK_SDK_PATH)\Bin\glslc.exe" "$(ProjectDir)shaders\shader.vert" -o "$(ProjectDir)shaders\vert.spv"
+"$(VK_SDK_PATH)\Bin\glslc.exe" "$(ProjectDir)shaders\shader.frag" -o "$(ProjectDir)shaders\frag.spv"</Command>
+    </PreBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <ClCompile>
@@ -162,6 +166,7 @@
   <ItemGroup>
     <ClCompile Include="Application\SandboxApplication.cpp" />
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="Scenarios\SphereDropScenario.cpp" />
     <ClCompile Include="ThirdParty\imgui\backends\imgui_impl_glfw.cpp" />
     <ClCompile Include="ThirdParty\imgui\backends\imgui_impl_vulkan.cpp" />
     <ClCompile Include="ThirdParty\imgui\imgui.cpp" />
@@ -186,10 +191,16 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Application\SandboxApplication.h" />
+    <ClInclude Include="Renderer\Camera.h" />
+    <ClInclude Include="Renderer\MeshGenerator.h" />
     <ClInclude Include="Renderer\VulkanCore.h" />
     <ClInclude Include="Scenarios\Scenario.h" />
     <ClInclude Include="Scenarios\SphereDropScenario.h" />
     <ClInclude Include="ThirdParty\imgui\imconfig.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="glsl shaders\shader.frag" />
+    <None Include="glsl shaders\shader.vert" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
