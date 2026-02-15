@@ -52,6 +52,21 @@ public:
     float GetMovementSpeed() const { return m_MovementSpeed; }
     float GetMouseSensitivity() const { return m_MouseSensitivity; }
 
+    void SetOrthographic(float left, float right, float bottom, float top, float nearPlane, float farPlane) {
+        m_Projection = glm::ortho(left, right, bottom, top, nearPlane, farPlane);
+        m_Projection[1][1] *= -1;
+    }
+
+    void SetLookAt(const glm::vec3& position, const glm::vec3& target, const glm::vec3& up = { 0.0f, 1.0f, 0.0f }) {
+        m_Position = position;
+        m_Front = glm::normalize(target - position);
+        m_Right = glm::normalize(glm::cross(m_Front, up));
+        m_Up = glm::normalize(glm::cross(m_Right, m_Front));
+
+        m_Yaw = glm::degrees(atan2(m_Front.z, m_Front.x));
+        m_Pitch = glm::degrees(asin(m_Front.y));
+    }
+
 private:
     void UpdateVectors() {
         glm::vec3 front;

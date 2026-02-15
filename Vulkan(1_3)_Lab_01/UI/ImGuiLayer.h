@@ -20,12 +20,13 @@ public:
               VkDevice device, uint32_t graphicsQueueFamily, VkQueue graphicsQueue,
               VkFormat swapChainFormat);
     void Shutdown(VkDevice device);
-    
+
     void BeginFrame();
     void EndFrame(VkCommandBuffer commandBuffer);
-    
+
+    void RenderMainMenuBar(SandboxApplication* app);
     void RenderControlPanel(SandboxApplication* app);
-    
+
     void SetScenarioNames(const std::vector<std::string>& names) { m_ScenarioNames = names; }
     void SetSelectedScenario(int index) { m_SelectedScenarioIndex = index; }
 };

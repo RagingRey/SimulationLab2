@@ -44,6 +44,19 @@ struct UniformBufferObject {
     alignas(16) glm::vec3 lightDir;
 };
 
+struct MaterialSettings {
+    glm::vec4 lightColor{ 0.75f, 0.15f, 0.15f, 1.0f };
+    glm::vec4 darkColor{ 0.15f, 0.15f, 0.15f, 1.0f };
+    float checkerScale = 6.0f;
+};
+
+struct PushConstants {
+    glm::mat4 model;
+    glm::vec4 checkerColorA;
+    glm::vec4 checkerColorB;
+    glm::vec4 checkerParams; // x = checker scale
+};
+
 class SandboxApplication {
 public:
     void Run();
@@ -57,12 +70,18 @@ public:
         }});
     }
     void ChangeScenario(int index);
+    Scenario* GetCurrentScenario() const { return m_CurrentScenario.get(); }
+
+    // --- Material ---
+    MaterialSettings& GetMaterialSettings() { return m_MaterialSettings; }
+    const MaterialSettings& GetMaterialSettings() const { return m_MaterialSettings; }
 
     // --- Simulation Controls ---
     void Play() { m_IsPaused = false; }
     void Pause() { m_IsPaused = true; }
     void TogglePause() { m_IsPaused = !m_IsPaused; }
     void Stop();
+    void StepOnce();
     bool IsPaused() const { return m_IsPaused; }
     void SetTimeStep(float dt) { m_TimeStep = dt; }
     float GetTimeStep() const { return m_TimeStep; }
@@ -72,6 +91,11 @@ public:
     // --- Camera ---
     void SetCameraView(CameraView view) { m_CameraView = view; }
     CameraView GetCameraView() const { return m_CameraView; }
+
+    void SetOrthographic(bool enabled) { m_UseOrthographic = enabled; }
+    bool IsOrthographic() const { return m_UseOrthographic; }
+    void SetOrthoSize(float size) { m_OrthoSize = size; }
+    float GetOrthoSize() const { return m_OrthoSize; }
 
     // --- Vulkan Access for Scenarios ---
     VkDevice GetDevice() const { return m_Device; }
@@ -205,6 +229,7 @@ private:
 
     // --- Simulation State ---
     bool m_IsPaused = true;
+    bool m_StepRequested = false;
     float m_TimeStep = 1.0f / 60.0f;
     float m_SimulationSpeed = 1.0f;
     float m_AccumulatedTime = 0.0f;
@@ -214,10 +239,15 @@ private:
 
     Camera m_Camera;
 
+    MaterialSettings m_MaterialSettings{};
+
     bool m_FirstMouse = true;
     double m_LastMouseX = WIDTH / 2.0;
     double m_LastMouseY = HEIGHT / 2.0;
     bool m_CameraEnabled = true;
+
+    bool m_UseOrthographic = false;
+    float m_OrthoSize = 6.0f;
 
     // Add callback declaration
     static void mouseCallback(GLFWwindow* window, double xpos, double ypos);

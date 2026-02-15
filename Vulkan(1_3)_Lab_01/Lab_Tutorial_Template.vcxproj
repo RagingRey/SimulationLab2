@@ -117,8 +117,8 @@
       <IgnoreSpecificDefaultLibraries>MSVCRT.lib;%(IgnoreSpecificDefaultLibraries)</IgnoreSpecificDefaultLibraries>
     </Link>
     <PreBuildEvent>
-      <Command>"$(VK_SDK_PATH)\Bin\glslc.exe" "$(ProjectDir)shaders\shader.vert" -o "$(ProjectDir)shaders\vert.spv"
-"$(VK_SDK_PATH)\Bin\glslc.exe" "$(ProjectDir)shaders\shader.frag" -o "$(ProjectDir)shaders\frag.spv"</Command>
+      <Command>"$(VK_SDK_PATH)\Bin\glslc.exe" "$(ProjectDir)glsl glsl shaders\shader.vert" -o "$(ProjectDir)glsl glsl shaders\vert.spv"
+"$(VK_SDK_PATH)\Bin\glslc.exe" "$(ProjectDir)glsl glsl shaders\shader.frag" -o "$(ProjectDir)glsl glsl shaders\frag.spv"</Command>
     </PreBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
@@ -166,7 +166,9 @@
   <ItemGroup>
     <ClCompile Include="Application\SandboxApplication.cpp" />
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="Scenarios\ClearColorScenario.cpp" />
     <ClCompile Include="Scenarios\SphereDropScenario.cpp" />
+    <ClCompile Include="SimulationLibrary\PhysicsObject.cpp" />
     <ClCompile Include="ThirdParty\imgui\backends\imgui_impl_glfw.cpp" />
     <ClCompile Include="ThirdParty\imgui\backends\imgui_impl_vulkan.cpp" />
     <ClCompile Include="ThirdParty\imgui\imgui.cpp" />
@@ -194,11 +196,16 @@
     <ClInclude Include="Renderer\Camera.h" />
     <ClInclude Include="Renderer\MeshGenerator.h" />
     <ClInclude Include="Renderer\VulkanCore.h" />
+    <ClInclude Include="Scenarios\ClearColorScenario.h" />
     <ClInclude Include="Scenarios\Scenario.h" />
     <ClInclude Include="Scenarios\SphereDropScenario.h" />
+    <ClInclude Include="SimulationLibrary\PhysicsObject.h" />
     <ClInclude Include="ThirdParty\imgui\imconfig.h" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="..\beyioku_lab2.md" />
+    <None Include="glsl glsl shaders\shader.frag" />
+    <None Include="glsl glsl shaders\shader.vert" />
     <None Include="glsl shaders\shader.frag" />
     <None Include="glsl shaders\shader.vert" />
   </ItemGroup>

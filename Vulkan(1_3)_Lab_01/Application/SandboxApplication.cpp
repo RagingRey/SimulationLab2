@@ -1,6 +1,7 @@
 #include "SandboxApplication.h"
 #include "../UI/ImGuiLayer.h"
 #include "../Scenarios/SphereDropScenario.h"
+#include "../Scenarios/ClearColorScenario.h"
 
 #include <iostream>
 #include <fstream>
@@ -145,8 +146,9 @@ void SandboxApplication::initImGui() {
 }
 
 void SandboxApplication::initScenarios() {
+    RegisterScenario<ClearColorScenario>("Clear Color");
     RegisterScenario<SphereDropScenario>("Sphere Drop");
-    
+
     std::vector<std::string> names;
     for (const auto& [name, factory] : m_ScenarioFactories) {
         names.push_back(name);
@@ -156,6 +158,11 @@ void SandboxApplication::initScenarios() {
     if (!m_ScenarioFactories.empty()) {
         ChangeScenario(0);
     }
+}
+
+void SandboxApplication::StepOnce() {
+    m_IsPaused = true;
+    m_StepRequested = true;
 }
 
 void SandboxApplication::mainLoop() {
@@ -170,12 +177,17 @@ void SandboxApplication::mainLoop() {
 
         ProcessInput(deltaTime);
 
-        // Fixed timestep update
-        if (m_CurrentScenario && !m_IsPaused) {
-            m_AccumulatedTime += deltaTime * m_SimulationSpeed;
-            while (m_AccumulatedTime >= m_TimeStep) {
+        if (m_CurrentScenario) {
+            if (!m_IsPaused) {
+                m_AccumulatedTime += deltaTime * m_SimulationSpeed;
+                while (m_AccumulatedTime >= m_TimeStep) {
+                    m_CurrentScenario->OnUpdate(m_TimeStep);
+                    m_AccumulatedTime -= m_TimeStep;
+                }
+            }
+            else if (m_StepRequested) {
                 m_CurrentScenario->OnUpdate(m_TimeStep);
-                m_AccumulatedTime -= m_TimeStep;
+                m_StepRequested = false;
             }
         }
 
@@ -455,8 +467,8 @@ void SandboxApplication::createDescriptorSetLayout() {
 }
 
 void SandboxApplication::createGraphicsPipeline() {
-    auto vertShaderCode = readFile("shaders/vert.spv");
-    auto fragShaderCode = readFile("shaders/frag.spv");
+    auto vertShaderCode = readFile("glsl glsl shaders/vert.spv");
+    auto fragShaderCode = readFile("glsl glsl shaders/frag.spv");
 
     VkShaderModule vertShaderModule = createShaderModule(vertShaderCode);
     VkShaderModule fragShaderModule = createShaderModule(fragShaderCode);
@@ -520,16 +532,16 @@ void SandboxApplication::createGraphicsPipeline() {
     dynamicState.pDynamicStates = dynamicStates.data();
 
     VkPushConstantRange pushConstantRange{};
-    pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
     pushConstantRange.offset = 0;
-    pushConstantRange.size = sizeof(glm::mat4);
+    pushConstantRange.size = sizeof(PushConstants);
 
     VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
     pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
     pipelineLayoutInfo.setLayoutCount = 1;
     pipelineLayoutInfo.pSetLayouts = &m_DescriptorSetLayout;
-    pipelineLayoutInfo.pushConstantRangeCount = 1;  // ADD THIS
-    pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;  // ADD THIS
+    pipelineLayoutInfo.pushConstantRangeCount = 1;
+    pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
 
     if (vkCreatePipelineLayout(m_Device, &pipelineLayoutInfo, nullptr, &m_PipelineLayout) != VK_SUCCESS) {
         throw std::runtime_error("Failed to create pipeline layout!");
@@ -726,8 +738,8 @@ void SandboxApplication::drawFrame() {
     vkWaitForFences(m_Device, 1, &m_InFlightFences[m_CurrentFrame], VK_TRUE, UINT64_MAX);
 
     uint32_t imageIndex;
-    VkResult result = vkAcquireNextImageKHR(m_Device, m_SwapChain, UINT64_MAX, 
-                                             m_ImageAvailableSemaphores[m_CurrentFrame], VK_NULL_HANDLE, &imageIndex);
+    VkResult result = vkAcquireNextImageKHR(m_Device, m_SwapChain, UINT64_MAX,
+        m_ImageAvailableSemaphores[m_CurrentFrame], VK_NULL_HANDLE, &imageIndex);
 
     if (result == VK_ERROR_OUT_OF_DATE_KHR) {
         recreateSwapChain();
@@ -735,7 +747,9 @@ void SandboxApplication::drawFrame() {
     }
 
     m_UILayer->BeginFrame();
+    m_UILayer->RenderMainMenuBar(this);
     m_UILayer->RenderControlPanel(this);
+
     if (m_CurrentScenario) {
         m_CurrentScenario->OnImGui();
     }
@@ -816,7 +830,6 @@ void SandboxApplication::recordCommandBuffer(VkCommandBuffer commandBuffer, uint
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     vkBeginCommandBuffer(commandBuffer, &beginInfo);
 
-    // Transition to color attachment
     VkImageMemoryBarrier2 barrierToAttachment{};
     barrierToAttachment.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
     barrierToAttachment.srcStageMask = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
@@ -833,14 +846,17 @@ void SandboxApplication::recordCommandBuffer(VkCommandBuffer commandBuffer, uint
     depInfo.pImageMemoryBarriers = &barrierToAttachment;
     vkCmdPipelineBarrier2(commandBuffer, &depInfo);
 
-    // Begin rendering
+    glm::vec4 clearColor = m_CurrentScenario
+        ? m_CurrentScenario->GetClearColor()
+        : glm::vec4(0.1f, 0.1f, 0.1f, 1.0f);
+
     VkRenderingAttachmentInfo colorAttachment{};
     colorAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
     colorAttachment.imageView = m_SwapChainImageViews[imageIndex];
     colorAttachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
     colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
     colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-    colorAttachment.clearValue.color = { {0.1f, 0.1f, 0.1f, 1.0f} };
+    colorAttachment.clearValue.color = { { clearColor.r, clearColor.g, clearColor.b, clearColor.a } };
 
     VkRenderingInfo renderingInfo{};
     renderingInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
@@ -866,11 +882,23 @@ void SandboxApplication::recordCommandBuffer(VkCommandBuffer commandBuffer, uint
     VkDeviceSize offsets[] = { 0 };
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
     vkCmdBindIndexBuffer(commandBuffer, m_IndexBuffer, 0, VK_INDEX_TYPE_UINT16);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_PipelineLayout, 0, 1, &m_DescriptorSets[m_CurrentFrame], 0, nullptr);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_PipelineLayout, 0, 1,
+        &m_DescriptorSets[m_CurrentFrame], 0, nullptr);
 
     if (m_CurrentScenario) {
         m_CurrentScenario->OnRender(commandBuffer);
-    } else {
+    }
+    else {
+        PushConstants pushConstants{};
+        pushConstants.model = glm::mat4(1.0f);
+        pushConstants.checkerColorA = m_MaterialSettings.lightColor;
+        pushConstants.checkerColorB = m_MaterialSettings.darkColor;
+        pushConstants.checkerParams = glm::vec4(m_MaterialSettings.checkerScale, 0.0f, 0.0f, 0.0f);
+
+        vkCmdPushConstants(commandBuffer, m_PipelineLayout,
+            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+            0, sizeof(PushConstants), &pushConstants);
+
         vkCmdDrawIndexed(commandBuffer, 6, 1, 0, 0, 0);
     }
 
@@ -878,7 +906,6 @@ void SandboxApplication::recordCommandBuffer(VkCommandBuffer commandBuffer, uint
 
     vkCmdEndRendering(commandBuffer);
 
-    // Transition to present
     VkImageMemoryBarrier2 barrierToPresent{};
     barrierToPresent.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
     barrierToPresent.srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
@@ -896,12 +923,32 @@ void SandboxApplication::recordCommandBuffer(VkCommandBuffer commandBuffer, uint
 }
 
 void SandboxApplication::updateUniformBuffer(uint32_t currentImage) {
-    static auto startTime = std::chrono::high_resolution_clock::now();
-    auto currentTime = std::chrono::high_resolution_clock::now();
-    float time = std::chrono::duration<float>(currentTime - startTime).count();
-
     float aspect = m_SwapChainExtent.width / (float)m_SwapChainExtent.height;
-    m_Camera.SetPerspective(glm::radians(45.0f), aspect, 0.1f, 100.0f);
+
+    if (m_UseOrthographic) {
+        float halfH = m_OrthoSize;
+        float halfW = m_OrthoSize * aspect;
+        m_Camera.SetOrthographic(-halfW, halfW, -halfH, halfH, 0.1f, 100.0f);
+    }
+    else {
+        m_Camera.SetPerspective(glm::radians(45.0f), aspect, 0.1f, 100.0f);
+    }
+
+    switch (m_CameraView) {
+    case CameraView::Top:
+        m_Camera.SetLookAt({ 0.0f, 12.0f, 0.0f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, -1.0f });
+        break;
+    case CameraView::Front:
+        m_Camera.SetLookAt({ 0.0f, 5.0f, 12.0f }, { 0.0f, 0.0f, 0.0f });
+        break;
+    case CameraView::Side:
+        m_Camera.SetLookAt({ 12.0f, 5.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
+        break;
+    case CameraView::Perspective:
+    default:
+        // Free camera
+        break;
+    }
 
     UniformBufferObject ubo{};
     ubo.model = glm::mat4(1.0f);
