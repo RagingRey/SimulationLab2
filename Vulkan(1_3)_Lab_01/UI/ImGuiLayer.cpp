@@ -132,6 +132,13 @@ void ImGuiLayer::RenderMainMenuBar(SandboxApplication* app) {
         if (ImGui::SliderFloat("Time Step", &timeStep, 0.001f, 0.1f, "%.4f s")) {
             app->SetTimeStep(timeStep);
         }
+
+        const char* methods[] = { "Explicit Euler", "Semi-Implicit Euler" };
+        int current = static_cast<int>(app->GetIntegrationMethod());
+        if (ImGui::Combo("Integrator", &current, methods, IM_ARRAYSIZE(methods))) {
+            app->SetIntegrationMethod(static_cast<IntegrationMethod>(current));
+        }
+
         ImGui::EndMenu();
     }
 
@@ -190,6 +197,12 @@ void ImGuiLayer::RenderControlPanel(SandboxApplication* app) {
     float simSpeed = app->GetSimulationSpeed();
     if (ImGui::SliderFloat("Speed", &simSpeed, 0.1f, 5.0f, "%.1fx")) {
         app->SetSimulationSpeed(simSpeed);
+    }
+
+    const char* methods[] = { "Explicit Euler", "Semi-Implicit Euler" };
+    int current = static_cast<int>(app->GetIntegrationMethod());
+    if (ImGui::Combo("Integrator", &current, methods, IM_ARRAYSIZE(methods))) {
+        app->SetIntegrationMethod(static_cast<IntegrationMethod>(current));
     }
 
     ImGui::Separator();

@@ -12,7 +12,7 @@
 #include "../UI/ImGuiLayer.h"
 #include "../Renderer/MeshGenerator.h"
 #include "../Renderer/Camera.h"
-
+#include "../SimulationLibrary/IntegrationMethod.h"
 
 #include <memory>
 #include <vector>
@@ -87,6 +87,9 @@ public:
     float GetTimeStep() const { return m_TimeStep; }
     void SetSimulationSpeed(float speed) { m_SimulationSpeed = speed; }
     float GetSimulationSpeed() const { return m_SimulationSpeed; }
+
+    void SetIntegrationMethod(IntegrationMethod method) { m_IntegrationMethod = method; }
+    IntegrationMethod GetIntegrationMethod() const { return m_IntegrationMethod; }
 
     // --- Camera ---
     void SetCameraView(CameraView view) { m_CameraView = view; }
@@ -233,6 +236,8 @@ private:
     float m_TimeStep = 1.0f / 60.0f;
     float m_SimulationSpeed = 1.0f;
     float m_AccumulatedTime = 0.0f;
+
+    IntegrationMethod m_IntegrationMethod = IntegrationMethod::SemiImplicitEuler;
 
     // --- Camera ---
     CameraView m_CameraView = CameraView::Perspective;

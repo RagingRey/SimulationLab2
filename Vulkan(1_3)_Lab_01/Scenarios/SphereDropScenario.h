@@ -3,28 +3,65 @@
 #include "../Renderer/MeshGenerator.h"
 #include "../Application/SandboxApplication.h"
 #include "../SimulationLibrary/PhysicsObject.h"
+#include "../SimulationLibrary/Collider.h"
 #include <glm/glm.hpp>
+#include <vector>
+#include <string>
 
 class SphereDropScenario : public Scenario {
 private:
-    glm::vec3 m_SpherePosition = { 0.0f, 5.0f, 0.0f };
-    glm::vec3 m_Velocity = { 0.0f, 0.0f, 0.0f };
+    struct SphereInstance {
+        PhysicsObject body;
+        Mesh mesh;
+        SandboxApplication::MeshBuffers buffers{};
+        glm::vec3 color{ 1.0f, 0.3f, 0.3f };
+    };
 
-    glm::vec3 m_SphereBPosition = { 2.0f, 7.0f, 0.0f };
-    glm::vec3 m_SphereBVelocity = { 0.0f, 0.0f, 0.0f };
+    struct PlaneInstance {
+        PhysicsObject body;
+        Mesh mesh;
+        SandboxApplication::MeshBuffers buffers{};
+        glm::vec3 color{ 0.4f, 0.4f, 0.4f };
+        glm::quat orientation{ 1.0f, 0.0f, 0.0f, 0.0f };
+        glm::vec2 size{ 10.0f, 10.0f };
+    };
 
-    float m_Radius = 0.5f;
+    std::vector<SphereInstance> m_Spheres;
+    std::vector<PlaneInstance> m_Planes;
+    int m_GroundPlaneIndex = -1;
+
     float m_Gravity = -9.81f;
     float m_GroundY = 0.0f;
+    bool m_UseBounce = true;
 
-    PhysicsObject m_SphereObject{};
-    PhysicsObject m_SphereBObject{};
-    PhysicsObject m_GroundObject{};
+    float m_PlaneFriction = 0.35f;
+    float m_StopSpeed = 0.05f;
 
-    Mesh m_SphereMesh;
-    Mesh m_GroundMesh;
-    SandboxApplication::MeshBuffers m_SphereBuffers{};
-    SandboxApplication::MeshBuffers m_GroundBuffers{};
+    std::string m_ConfigPath = "Configs/SphereDropScenario.cfg";
+
+    void ClearScene();
+    void RebuildSphereMesh(SphereInstance& sphere);
+
+    void ResolveSpherePlane(SphereInstance& sphere, const PlaneCollider& plane);
+    void ResolveSphereSphere(SphereInstance& a, SphereInstance& b);
+
+    void AddSphere(const glm::vec3& position,
+        const glm::vec3& velocity,
+        float radius,
+        const glm::vec3& color,
+        float restitution,
+        float mass);
+
+    void AddPlane(const glm::vec3& point,
+        const glm::vec3& normal,
+        const glm::vec2& size,
+        const glm::vec3& color,
+        bool isGround);
+
+    void UpdatePlaneTransform(PlaneInstance& plane, const glm::vec3& position);
+
+    bool LoadConfig(const std::string& path);
+    void LoadDefaultConfig();
 
 public:
     explicit SphereDropScenario(SandboxApplication* app) : Scenario(app) {}
