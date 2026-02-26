@@ -1,6 +1,6 @@
 ﻿# Simulation Lab Book
 
-## Week 2 - Lab 2
+## Week 3 - Lab 3
 
 February 23, 2026
 
