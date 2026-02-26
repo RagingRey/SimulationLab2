@@ -2,6 +2,7 @@
 #include "../UI/ImGuiLayer.h"
 #include "../Scenarios/SphereDropScenario.h"
 #include "../Scenarios/ClearColorScenario.h"
+#include "../Scenarios/CollisionScenario.h"
 
 #include <iostream>
 #include <fstream>
@@ -148,6 +149,7 @@ void SandboxApplication::initImGui() {
 void SandboxApplication::initScenarios() {
     RegisterScenario<ClearColorScenario>("Clear Color");
     RegisterScenario<SphereDropScenario>("Sphere Drop");
+    RegisterScenario<CollisionScenario>("Collision Tests");
 
     std::vector<std::string> names;
     for (const auto& [name, factory] : m_ScenarioFactories) {

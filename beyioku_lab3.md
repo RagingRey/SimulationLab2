@@ -7,7 +7,7 @@ February 23, 2026
 ### Q1. Reflect upon the implications of how you manage position
 
 **Question:**
-Be able to load and unload different scenarios easily. Provide an ImGui Main Menu Bar with a Scenario menu to switch active scenarios. Allow scenarios to add their own main-menu UI (e.g., Where could you store the position of your physics objects and what implications would that have on the rest of your system?
+Where could you store the position of your physics objects and what implications would that have on the rest of your system?
 
 What options did you consider?
 What were the advantages and disadvantages of each?
@@ -22,10 +22,6 @@ What was your final decision and why?colour picker to change background). OnLoad
 2) **Store position on `PhysicsObject` (transform) and sync the collider**
    - **Pros:** Single source of truth for position/rotation; physics, rendering, and UI stay consistent. Colliders remain lightweight and reusable.
    - **Cons:** Requires syncing the collider after transform changes.
-
-3) **Store position in a separate `Transform` component shared by all systems**
-   - **Pros:** Clean separation and extensible design.
-   - **Cons:** Extra plumbing and classes for a small project.
 
 **Final decision:**
 I stored position in `PhysicsObject` and sync the collider from it. This keeps transforms consistent across physics and rendering, supports multiple collider types, and matches the “PhysicsObject has a Collider” design.
