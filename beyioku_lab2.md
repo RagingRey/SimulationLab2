@@ -52,8 +52,8 @@ void ImGuiLayer::RenderMainMenuBar(SandboxApplication* app) {
 ### Q2. Be able to render primitive shapes
 
 **Question:**
-We want to find the shortest distance between the line and a general point PG . The shortest distance from the point PG to the line will form a right angle with the line. 
-There are lots of approaches to calculate this. One way to think about this problem is to imagine a right angled triangle between the point on the line PL, the general point PG, and the unknown point that forms the right angle. 
+Create a PhysicsObject in your SimulationLibrary. The physics object needs a position and orientation in space. This could be represented in a number of ways. 
+For now to remain consistent with the renderer you should use a 4x4 matrix to represent the rotation and position of the PhysicsObject. Add the appropriate dependencies to your SimulationSandBox so that you can use the code in the SimulationLibrary.
 
 **Solution:**
 ```c++
@@ -126,7 +126,7 @@ void SphereDropScenario::OnRender(VkCommandBuffer commandBuffer) {
 ---
 
 
-### Q3. Sphere–Line Intersection Test (Summative)
+### Q3. Be ready to add simulation to the sandbox
 
 **Question:**
 To create meaningful simulations you need to be able to Simulate objects colliding with one another,
