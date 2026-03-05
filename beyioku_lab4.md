@@ -4,12 +4,10 @@
 
 March 2nd, 2026
 
-### Q1. Reflect upon the implications of how you manage position
+### Q1. Be able to collide a ball with a fixed object 
 
 **Question:**
-Add tests to collide a moving ball (sphere collider) with a fixed object and assign the resultant velocity using the correct impulse over a fixed timestep.  
-Fixed object can be another sphere or a plane.  
-Determine the collision normal at contact.
+Add appropriate tests to your testing framework to collide a ball (a physics object with a sphere collider) with another fixed object and assign the appropriate resultant velocity by applying the correct impulse over the fixed timestep. The fixed object could be another sphere, cylinder or plane. When you detect the collision you will need to be able to determine the normal vector at the point of the collision.
 
 **Solution:**
 I implemented a dedicated collision scenario (`CollisionScenario`) that runs focused test cases for:
@@ -45,7 +43,7 @@ Where:
 - `e` = restitution
 - `n` = collision normal
 
-### Q2. Be able to move a ball through space (Summative)
+### Q2. Be able to collide a ball with another moving ball with the same mass
 
 **Question:**
 Add tests to collide a ball with another moving ball and assign the correct resultant velocity by applying impulse to each ball over fixed timestep. Start with head-on collisions, then both moving and glancing collisions.
@@ -76,11 +74,11 @@ I updated sphere-sphere response to impulse-based collision resolution so both b
    - Offset centers to force oblique normal and tangential component split
 
 **Reflection:**  
-Using impulse on both bodies gives physically correct exchange along the collision normal. In equal-mass head-on cases, velocities swap along the collision axis; in glancing collisions, only normal components are exchanged while tangential components are preserved (with idealized no-friction sphere contact).
+Using impulse on both bodies gives physically correct exchange along the collision normal. In equal-mass head-on cases, velocities swap along the collision axis; in glancing collisions, only normal components are exchanged.
 
 
 
-### Q3. Be able to make a sphere fall under the effect of gravity (Summative)
+### Q3. Be able to collide a ball with another moving ball with different masses (Summative)
 
 **Question:**  
 Add tests to collide two moving balls with different masses and compute resultant velocities using impulse over fixed timestep.
@@ -119,7 +117,7 @@ Impulse-based response naturally handles different masses through inverse mass w
 In tests, the lighter sphere experiences larger velocity change while the heavier sphere is less affected, which matches expected physical behavior.
 
 
-### Q4. Be able to detect a collision between spheres and planes (Summative)
+### Q4. Reflect on setting velocities versus calculating impulse
 
 **Question:**
 Reflect on directly setting post-collision velocities versus calculating collision impulse (and equivalent force over fixed timestep). Implement both approaches and compare consequences when many collisions/forces interact.
