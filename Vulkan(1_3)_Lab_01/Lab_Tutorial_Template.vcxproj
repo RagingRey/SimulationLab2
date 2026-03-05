@@ -209,6 +209,7 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="..\beyioku_lab2.md" />
+    <None Include=".github\copilot-instructions.md" />
     <None Include="Configs\SphereDropScenario.cfg" />
     <None Include="glsl glsl shaders\shader.frag" />
     <None Include="glsl glsl shaders\shader.vert" />

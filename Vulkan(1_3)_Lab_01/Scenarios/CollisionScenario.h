@@ -12,10 +12,17 @@
 class CollisionScenario : public Scenario {
 private:
     enum class TestCase {
-        SphereVsSphere = 0,
-        SphereVsPlaneAxisAligned = 1,
-        SphereVsPlaneTilted = 2,
-        SphereVsPlaneTiltedSkewed = 3
+        SphereVsSphereFixed = 0,
+        SphereVsSphereEqualMassOneMoving = 1,
+        SphereVsSphereEqualMassBothMoving = 2,
+        SphereVsSphereEqualMassGlancing = 3,
+        SphereVsSphereDifferentMassOneMoving = 4,
+        SphereVsSphereDifferentMassBothMoving = 5,
+        SphereVsPlaneAxisAligned = 6,
+        SphereVsPlaneTilted = 7,
+        SphereVsPlaneTiltedSkewed = 8,
+        ElasticityOne = 9,
+        ElasticityZero = 10
     };
 
     struct SphereInstance {

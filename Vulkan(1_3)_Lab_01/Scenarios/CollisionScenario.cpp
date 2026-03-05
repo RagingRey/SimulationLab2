@@ -97,15 +97,21 @@ void CollisionScenario::ResolveSphereSphere(SphereInstance& a, SphereInstance& b
     const float radiusSum = aCollider->GetRadius() + bCollider->GetRadius();
 
     if (distance <= 0.0f || distance >= radiusSum) {
-        return;
+        return; // no overlap
     }
 
+    // Collision normal
     const glm::vec3 normal = delta / distance;
-    const float penetration = radiusSum - distance;
 
+    // Positional correction (resolve penetration)
+    const float penetration = radiusSum - distance;
     const float invA = a.body.GetInverseMass();
     const float invB = b.body.GetInverseMass();
     const float invSum = invA + invB;
+
+    if (invSum <= 0.0f) {
+        return;
+    }
 
     if (invSum > 0.0f) {
         const glm::vec3 correction = normal * (penetration / invSum);
@@ -113,31 +119,26 @@ void CollisionScenario::ResolveSphereSphere(SphereInstance& a, SphereInstance& b
         b.body.SetPosition(b.body.GetPosition() + correction * invB);
     }
 
-    if (m_UseBounce) {
-        glm::vec3 va = a.body.GetVelocity();
-        glm::vec3 vb = b.body.GetVelocity();
+    // Relative velocity along normal
+    glm::vec3 va = a.body.GetVelocity();
+    glm::vec3 vb = b.body.GetVelocity();
+    const glm::vec3 relativeVelocity = vb - va;
+    const float velocityAlongNormal = glm::dot(relativeVelocity, normal);
 
-        const float vaN = glm::dot(va, normal);
-        const float vbN = glm::dot(vb, -normal);
-
-        if (vaN > 0.0f) {
-            va = va - (1.0f + a.body.GetRestitution()) * vaN * normal;
-        }
-        if (vbN > 0.0f) {
-            vb = vb - (1.0f + b.body.GetRestitution()) * vbN * -normal;
-        }
-
-        a.body.SetVelocity(va);
-        b.body.SetVelocity(vb);
+    if (velocityAlongNormal > 0.0f) {
+        return; // already separating
     }
-    else {
-        if (invA > 0.0f) {
-            a.body.SetVelocity(glm::vec3(0.0f));
-        }
-        if (invB > 0.0f) {
-            b.body.SetVelocity(glm::vec3(0.0f));
-        }
-    }
+
+    // Impulse scalar: j = -(1+e)(rv·n)/(invMassA+invMassB)
+    const float restitution = m_UseBounce ? m_BounceRestitution : 0.0f;
+    const float j = -(1.0f + restitution) * velocityAlongNormal / invSum;
+    const glm::vec3 impulse = j * normal;
+
+    va -= impulse * invA;
+    vb += impulse * invB;
+
+    a.body.SetVelocity(va);
+    b.body.SetVelocity(vb);
 }
 
 void CollisionScenario::SetupTestCase(TestCase testCase) {
@@ -149,7 +150,7 @@ void CollisionScenario::SetupTestCase(TestCase testCase) {
     m_Gravity = 0.0f;
 
     switch (m_TestCase) {
-    case TestCase::SphereVsSphere:
+    case TestCase::SphereVsSphereFixed:
         m_TestDescription = "Moving sphere vs stationary sphere";
         AddSphere({ -2.0f, 0.5f, 0.0f }, { 1.0f, 0.0f, 0.0f }, 0.5f, 1.0f, { 1.0f, 0.3f, 0.3f });
         AddSphere({ 0.0f, 0.5f, 0.0f }, { 0.0f, 0.0f, 0.0f }, 0.5f, 0.0f, { 0.3f, 0.3f, 1.0f });
@@ -193,6 +194,60 @@ void CollisionScenario::SetupTestCase(TestCase testCase) {
         m_ExpectedPosition = normal * 0.5f; // keep or revise if grading checks exact target
         break;
     }
+
+    case TestCase::SphereVsSphereEqualMassOneMoving:
+        m_TestDescription = "Q2: Equal mass head-on (one moving)";
+        AddSphere({ -2.0f, 0.5f, 0.0f }, { 2.0f, 0.0f, 0.0f }, 0.5f, 1.0f, { 1.0f, 0.3f, 0.3f });
+        AddSphere({ 0.0f, 0.5f, 0.0f }, { 0.0f, 0.0f, 0.0f }, 0.5f, 1.0f, { 0.3f, 0.3f, 1.0f });
+        break;
+
+    case TestCase::SphereVsSphereEqualMassBothMoving:
+        m_TestDescription = "Q2: Equal mass head-on (both moving)";
+        AddSphere({ -2.0f, 0.5f, 0.0f }, { 2.0f, 0.0f, 0.0f }, 0.5f, 1.0f, { 1.0f, 0.3f, 0.3f });
+        AddSphere({ 2.0f, 0.5f, 0.0f }, { -1.0f, 0.0f, 0.0f }, 0.5f, 1.0f, { 0.3f, 0.3f, 1.0f });
+        break;
+
+    case TestCase::SphereVsSphereEqualMassGlancing:
+        m_TestDescription = "Q2: Equal mass glancing collision";
+        AddSphere({ -2.0f, 0.9f, 0.0f }, { 2.0f, 0.0f, 0.0f }, 0.5f, 1.0f, { 1.0f, 0.3f, 0.3f });
+        AddSphere({ 0.0f, 0.3f, 0.0f }, { 0.0f, 0.0f, 0.0f }, 0.5f, 1.0f, { 0.3f, 0.3f, 1.0f });
+        break;
+
+    case TestCase::SphereVsSphereDifferentMassOneMoving:
+        m_TestDescription = "Q3: Different masses head-on (one moving)";
+        AddSphere({ -2.0f, 0.5f, 0.0f }, { 2.0f, 0.0f, 0.0f }, 0.5f, 1.0f, { 1.0f, 0.3f, 0.3f }); // m1=1
+        AddSphere({  0.0f, 0.5f, 0.0f }, { 0.0f, 0.0f, 0.0f }, 0.5f, 3.0f, { 0.3f, 0.8f, 1.0f }); // m2=3
+        m_TargetTime = 1.2f;
+        m_MovingSphereIndex = 0;
+        break;
+
+    case TestCase::SphereVsSphereDifferentMassBothMoving:
+        m_TestDescription = "Q3: Different masses head-on (both moving)";
+        AddSphere({ -2.0f, 0.5f, 0.0f }, { 2.0f, 0.0f, 0.0f }, 0.5f, 1.0f, { 1.0f, 0.3f, 0.3f }); // m1=1
+        AddSphere({  2.0f, 0.5f, 0.0f }, { -1.0f, 0.0f, 0.0f }, 0.5f, 4.0f, { 0.3f, 0.8f, 1.0f }); // m2=4
+        m_TargetTime = 1.5f;
+        m_MovingSphereIndex = 0;
+        break;
+
+    case TestCase::ElasticityOne:
+        m_TestDescription = "Q5: Elasticity e=1 (perfectly elastic)";
+        m_UseBounce = true;
+        m_BounceRestitution = 1.0f;
+        AddSphere({ -2.0f, 0.5f, 0.0f }, { 2.0f, 0.0f, 0.0f }, 0.5f, 1.0f, { 1.0f, 0.3f, 0.3f });
+        AddSphere({ 0.0f, 0.5f, 0.0f }, { 0.0f, 0.0f, 0.0f }, 0.5f, 1.0f, { 0.3f, 0.8f, 1.0f });
+        m_TargetTime = 1.2f;
+        m_MovingSphereIndex = 0;
+        break;
+
+    case TestCase::ElasticityZero:
+        m_TestDescription = "Q5: Elasticity e=0 (perfectly inelastic normal component)";
+        m_UseBounce = true;
+        m_BounceRestitution = 0.0f;
+        AddSphere({ -2.0f, 0.5f, 0.0f }, { 2.0f, 0.0f, 0.0f }, 0.5f, 1.0f, { 1.0f, 0.3f, 0.3f });
+        AddSphere({ 0.0f, 0.5f, 0.0f }, { 0.0f, 0.0f, 0.0f }, 0.5f, 1.0f, { 0.3f, 0.8f, 1.0f });
+        m_TargetTime = 1.2f;
+        m_MovingSphereIndex = 0;
+        break;
     }
 }
 
@@ -267,16 +322,26 @@ void CollisionScenario::OnRender(VkCommandBuffer commandBuffer) {
 }
 
 void CollisionScenario::OnImGui() {
-    ImGui::Begin("Q4 Collision Scenario");
+    ImGui::Begin("Lab 4 Collision Scenario");
 
     const char* options[] = {
-        "Sphere vs Sphere",
-        "Sphere vs Plane (Axis Aligned)",
-        "Sphere vs Plane (Tilted)",
-        "Sphere vs Plane (Skewed Tilted)"
+        "Q1: Sphere vs Sphere (Fixed Target)",
+        "Q2: Equal Mass Head-On (One Moving)",
+        "Q2: Equal Mass Head-On (Both Moving)",
+        "Q2: Equal Mass Glancing",
+        "Q3: Different Mass Head-On (One Moving)",
+        "Q3: Different Mass Head-On (Both Moving)",
+        "Q1: Sphere vs Plane (Axis Aligned)",
+        "Q1: Sphere vs Plane (Tilted)",
+        "Q1: Sphere vs Plane (Skewed Tilted)",
+        "Q5: Elasticity e=1",
+        "Q5: Elasticity e=0"
     };
 
-    int current = static_cast<int>(m_TestCase);
+    ImGui::Checkbox("Use Impulse Response", &m_UseBounce);
+    ImGui::SliderFloat("Elasticity (e)", &m_BounceRestitution, 0.0f, 1.0f);
+
+    int current = std::clamp(static_cast<int>(m_TestCase), 0, IM_ARRAYSIZE(options) - 1);
     if (ImGui::Combo("Test Case", &current, options, IM_ARRAYSIZE(options))) {
         SetupTestCase(static_cast<TestCase>(current));
     }
