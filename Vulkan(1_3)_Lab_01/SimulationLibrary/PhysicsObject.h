@@ -21,6 +21,11 @@ public:
     glm::quat GetOrientation() const { return glm::quat_cast(m_Transform); }
     void SetOrientation(const glm::quat& orientation);
     void SetOrientationEuler(const glm::vec3& eulerRadians);
+    void ApplyAngularDisplacementEuler(const glm::vec3& deltaRadians);
+
+    const glm::vec3& GetAngularVelocity() const { return m_AngularVelocity; }
+    void SetAngularVelocity(const glm::vec3& angularVelocityRadiansPerSecond) { m_AngularVelocity = angularVelocityRadiansPerSecond; }
+    void IntegrateAngularVelocity(float deltaTime);
 
     const glm::vec3& GetVelocity() const { return m_Velocity; }
     void SetVelocity(const glm::vec3& velocity) { m_Velocity = velocity; }
@@ -51,6 +56,8 @@ private:
 
     glm::mat4 m_Transform{1.0f};
     glm::vec3 m_Velocity{0.0f};
+    glm::vec3 m_AngularVelocity{0.0f}; // radians/sec
+
     float m_Radius = 0.5f;
     float m_Restitution = 0.8f;
 

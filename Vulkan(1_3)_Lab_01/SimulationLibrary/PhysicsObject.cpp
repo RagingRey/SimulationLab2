@@ -12,13 +12,26 @@ void PhysicsObject::SetPosition(const glm::vec3& position) {
 
 void PhysicsObject::SetOrientation(const glm::quat& orientation) {
     glm::vec3 position = GetPosition();
-    m_Transform = glm::mat4_cast(orientation);
+    m_Transform = glm::mat4_cast(glm::normalize(orientation));
     m_Transform[3] = glm::vec4(position, 1.0f);
     SyncCollider();
 }
 
 void PhysicsObject::SetOrientationEuler(const glm::vec3& eulerRadians) {
     SetOrientation(glm::quat(eulerRadians));
+}
+
+void PhysicsObject::ApplyAngularDisplacementEuler(const glm::vec3& deltaRadians) {
+    const glm::quat current = GetOrientation();
+    const glm::quat delta = glm::quat(deltaRadians);
+    SetOrientation(current * delta);
+}
+
+void PhysicsObject::IntegrateAngularVelocity(float deltaTime) {
+    if (glm::length2(m_AngularVelocity) <= 0.0f) {
+        return;
+    }
+    ApplyAngularDisplacementEuler(m_AngularVelocity * deltaTime);
 }
 
 void PhysicsObject::SetRadius(float radius) {
@@ -61,6 +74,8 @@ void PhysicsObject::SyncCollider() {
 }
 
 void PhysicsObject::Update(float deltaTime, float gravity, IntegrationMethod method) {
+    IntegrateAngularVelocity(deltaTime);
+
     if (m_InverseMass == 0.0f) {
         ClearForces();
         return;
