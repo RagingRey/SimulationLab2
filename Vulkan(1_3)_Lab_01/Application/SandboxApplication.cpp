@@ -4,6 +4,8 @@
 #include "../Scenarios/ClearColorScenario.h"
 #include "../Scenarios/CollisionScenario.h"
 #include "../Scenarios/OrientationScenario.h"
+#include "../Scene/SceneLoaderFlatBuffer.h"
+#include "../Scenarios/FlatBufferPreviewScenario.h"
 
 #include <iostream>
 #include <fstream>
@@ -13,6 +15,7 @@
 #include <cstring>
 #include <set>
 #include <limits>
+#include <filesystem>
 
 // Validation layers
 const std::vector<const char*> validationLayers = {
@@ -129,6 +132,7 @@ void SandboxApplication::initVulkan() {
     createLogicalDevice();
     createSwapChain();
     createImageViews();
+    createDepthResources();
     createDescriptorSetLayout();
     createGraphicsPipeline();
     createCommandPool();
@@ -148,6 +152,49 @@ void SandboxApplication::initImGui() {
 }
 
 void SandboxApplication::initScenarios() {
+    m_HasLoadedFlatBufferScene = false;
+    m_LoadedScene = {};
+    m_LoadedSceneWarnings.clear();
+
+    const std::vector<std::string> sceneCandidates = {
+        "Scenes/scene.bin",
+        "../Scenes/scene.bin",
+        "scene.bin"
+    };
+
+    for (const auto& path : sceneCandidates) {
+        if (!std::filesystem::exists(path)) {
+            continue;
+        }
+
+        auto loadResult = SimRuntime::SceneLoaderFlatBuffer::LoadFromFile(path);
+        if (!loadResult.success) {
+            std::cerr << "[SceneLoader] Failed to load '" << path << "': " << loadResult.error << std::endl;
+            continue;
+        }
+
+        m_HasLoadedFlatBufferScene = true;
+        m_LoadedScene = std::move(loadResult.scene);
+        m_LoadedSceneWarnings = std::move(loadResult.warnings);
+
+        std::cout << "[SceneLoader] Loaded scene: " << m_LoadedScene.name
+            << " | objects=" << m_LoadedScene.objects.size()
+            << " | spawners=" << m_LoadedScene.spawners.size()
+            << " | materials=" << m_LoadedScene.materials.size()
+            << " | cameras=" << m_LoadedScene.cameras.size() << std::endl;
+
+        for (const auto& warning : m_LoadedSceneWarnings) {
+            std::cout << "[SceneLoader][Warning] " << warning << std::endl;
+        }
+
+        break;
+    }
+
+    if (!m_HasLoadedFlatBufferScene) {
+        std::cout << "[SceneLoader] No FlatBuffer scene found yet. Using fallback preview + built-in scenarios." << std::endl;
+    }
+
+    RegisterScenario<FlatBufferPreviewScenario>("FlatBuffer Preview");
     RegisterScenario<ClearColorScenario>("Clear Color");
     RegisterScenario<SphereDropScenario>("Sphere Drop");
     RegisterScenario<CollisionScenario>("Collision Tests");
@@ -551,10 +598,21 @@ void SandboxApplication::createGraphicsPipeline() {
         throw std::runtime_error("Failed to create pipeline layout!");
     }
 
+    VkPipelineDepthStencilStateCreateInfo depthStencil{};
+    depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+    depthStencil.depthTestEnable = VK_TRUE;
+    depthStencil.depthWriteEnable = VK_TRUE;
+    depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
+    depthStencil.depthBoundsTestEnable = VK_FALSE;
+    depthStencil.stencilTestEnable = VK_FALSE;
+
+    m_DepthFormat = findDepthFormat();
+
     VkPipelineRenderingCreateInfo renderingCreateInfo{};
     renderingCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
     renderingCreateInfo.colorAttachmentCount = 1;
     renderingCreateInfo.pColorAttachmentFormats = &m_SwapChainImageFormat;
+    renderingCreateInfo.depthAttachmentFormat = m_DepthFormat; // NEW
 
     VkGraphicsPipelineCreateInfo pipelineInfo{};
     pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
@@ -566,6 +624,7 @@ void SandboxApplication::createGraphicsPipeline() {
     pipelineInfo.pViewportState = &viewportState;
     pipelineInfo.pRasterizationState = &rasterizer;
     pipelineInfo.pMultisampleState = &multisampling;
+    pipelineInfo.pDepthStencilState = &depthStencil; // NEW
     pipelineInfo.pColorBlendState = &colorBlending;
     pipelineInfo.pDynamicState = &dynamicState;
     pipelineInfo.layout = m_PipelineLayout;
@@ -820,9 +879,23 @@ void SandboxApplication::recreateSwapChain() {
     cleanupSwapChain();
     createSwapChain();
     createImageViews();
+    createDepthResources();
 }
 
 void SandboxApplication::cleanupSwapChain() {
+    if (m_DepthImageView != VK_NULL_HANDLE) {
+        vkDestroyImageView(m_Device, m_DepthImageView, nullptr);
+        m_DepthImageView = VK_NULL_HANDLE;
+    }
+    if (m_DepthImage != VK_NULL_HANDLE) {
+        vkDestroyImage(m_Device, m_DepthImage, nullptr);
+        m_DepthImage = VK_NULL_HANDLE;
+    }
+    if (m_DepthImageMemory != VK_NULL_HANDLE) {
+        vkFreeMemory(m_Device, m_DepthImageMemory, nullptr);
+        m_DepthImageMemory = VK_NULL_HANDLE;
+    }
+
     for (auto imageView : m_SwapChainImageViews) {
         vkDestroyImageView(m_Device, imageView, nullptr);
     }
@@ -862,12 +935,21 @@ void SandboxApplication::recordCommandBuffer(VkCommandBuffer commandBuffer, uint
     colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
     colorAttachment.clearValue.color = { { clearColor.r, clearColor.g, clearColor.b, clearColor.a } };
 
+    VkRenderingAttachmentInfo depthAttachment{};
+    depthAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+    depthAttachment.imageView = m_DepthImageView;
+    depthAttachment.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+    depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    depthAttachment.clearValue.depthStencil = { 1.0f, 0 };
+
     VkRenderingInfo renderingInfo{};
     renderingInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
     renderingInfo.renderArea = { {0, 0}, m_SwapChainExtent };
     renderingInfo.layerCount = 1;
     renderingInfo.colorAttachmentCount = 1;
     renderingInfo.pColorAttachments = &colorAttachment;
+    renderingInfo.pDepthAttachment = &depthAttachment; // NEW
 
     vkCmdBeginRendering(commandBuffer, &renderingInfo);
 
@@ -1187,6 +1269,77 @@ uint32_t SandboxApplication::findMemoryType(uint32_t typeFilter, VkMemoryPropert
         }
     }
     throw std::runtime_error("Failed to find suitable memory type!");
+}
+
+VkFormat SandboxApplication::findDepthFormat()
+{
+    const std::vector<VkFormat> candidates = {
+        VK_FORMAT_D32_SFLOAT,
+        VK_FORMAT_D32_SFLOAT_S8_UINT,
+        VK_FORMAT_D24_UNORM_S8_UINT
+    };
+
+    for (VkFormat format : candidates) {
+        VkFormatProperties props{};
+        vkGetPhysicalDeviceFormatProperties(m_PhysicalDevice, format, &props);
+        if (props.optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) {
+            return format;
+        }
+    }
+
+    throw std::runtime_error("Failed to find supported depth format!");
+}
+
+void SandboxApplication::createDepthResources() {
+    m_DepthFormat = findDepthFormat();
+
+    VkImageCreateInfo imageInfo{};
+    imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    imageInfo.imageType = VK_IMAGE_TYPE_2D;
+    imageInfo.extent.width = m_SwapChainExtent.width;
+    imageInfo.extent.height = m_SwapChainExtent.height;
+    imageInfo.extent.depth = 1;
+    imageInfo.mipLevels = 1;
+    imageInfo.arrayLayers = 1;
+    imageInfo.format = m_DepthFormat;
+    imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+    imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    imageInfo.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+    imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+    imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+    if (vkCreateImage(m_Device, &imageInfo, nullptr, &m_DepthImage) != VK_SUCCESS) {
+        throw std::runtime_error("Failed to create depth image!");
+    }
+
+    VkMemoryRequirements memRequirements{};
+    vkGetImageMemoryRequirements(m_Device, m_DepthImage, &memRequirements);
+
+    VkMemoryAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    allocInfo.allocationSize = memRequirements.size;
+    allocInfo.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+    if (vkAllocateMemory(m_Device, &allocInfo, nullptr, &m_DepthImageMemory) != VK_SUCCESS) {
+        throw std::runtime_error("Failed to allocate depth image memory!");
+    }
+
+    vkBindImageMemory(m_Device, m_DepthImage, m_DepthImageMemory, 0);
+
+    VkImageViewCreateInfo viewInfo{};
+    viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    viewInfo.image = m_DepthImage;
+    viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    viewInfo.format = m_DepthFormat;
+    viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+    viewInfo.subresourceRange.baseMipLevel = 0;
+    viewInfo.subresourceRange.levelCount = 1;
+    viewInfo.subresourceRange.baseArrayLayer = 0;
+    viewInfo.subresourceRange.layerCount = 1;
+
+    if (vkCreateImageView(m_Device, &viewInfo, nullptr, &m_DepthImageView) != VK_SUCCESS) {
+        throw std::runtime_error("Failed to create depth image view!");
+    }
 }
 
 SandboxApplication::MeshBuffers SandboxApplication::UploadMesh(const Mesh& mesh) {

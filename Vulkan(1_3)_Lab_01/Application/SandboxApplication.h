@@ -13,6 +13,7 @@
 #include "../Renderer/MeshGenerator.h"
 #include "../Renderer/Camera.h"
 #include "../SimulationLibrary/IntegrationMethod.h"
+#include "../Scene/SceneRuntime.h"
 
 #include <memory>
 #include <vector>
@@ -118,6 +119,10 @@ public:
 
     void ProcessInput(float deltaTime);
 
+    bool HasLoadedFlatBufferScene() const { return m_HasLoadedFlatBufferScene; }
+    const SimRuntime::SceneRuntime* GetLoadedScene() const { return m_HasLoadedFlatBufferScene ? &m_LoadedScene : nullptr; }
+    const std::vector<std::string>& GetLoadedSceneWarnings() const { return m_LoadedSceneWarnings; }
+
 private:
     // --- Initialization ---
     void initWindow();
@@ -135,6 +140,7 @@ private:
     void createLogicalDevice();
     void createSwapChain();
     void createImageViews();
+    void createDepthResources();
     void createDescriptorSetLayout();
     void createGraphicsPipeline();
     void createCommandPool();
@@ -165,11 +171,13 @@ private:
     bool checkValidationLayerSupport();
     static std::vector<char> readFile(const std::string& filename);
     VkShaderModule createShaderModule(const std::vector<char>& code);
-    void createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, 
-                      VkMemoryPropertyFlags properties, VkBuffer& buffer, 
+    void createBuffer(VkDeviceSize size, VkBufferUsageFlags usage,
+                      VkMemoryPropertyFlags properties, VkBuffer& buffer,
                       VkDeviceMemory& bufferMemory);
     void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size);
     uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
+
+    VkFormat findDepthFormat(); // NEW
 
     // --- Callbacks ---
     static void framebufferResizeCallback(GLFWwindow* window, int width, int height);
@@ -196,6 +204,12 @@ private:
     VkFormat m_SwapChainImageFormat = VK_FORMAT_UNDEFINED;
     VkExtent2D m_SwapChainExtent{0, 0};
     std::vector<VkImageView> m_SwapChainImageViews;
+
+    // Depth (NEW)
+    VkImage m_DepthImage = VK_NULL_HANDLE;
+    VkDeviceMemory m_DepthImageMemory = VK_NULL_HANDLE;
+    VkImageView m_DepthImageView = VK_NULL_HANDLE;
+    VkFormat m_DepthFormat = VK_FORMAT_UNDEFINED;
 
     // --- Pipeline ---
     VkDescriptorSetLayout m_DescriptorSetLayout = VK_NULL_HANDLE;
@@ -253,6 +267,10 @@ private:
 
     bool m_UseOrthographic = false;
     float m_OrthoSize = 6.0f;
+
+    bool m_HasLoadedFlatBufferScene = false;
+    SimRuntime::SceneRuntime m_LoadedScene{};
+    std::vector<std::string> m_LoadedSceneWarnings;
 
     // Add callback declaration
     static void mouseCallback(GLFWwindow* window, double xpos, double ypos);
