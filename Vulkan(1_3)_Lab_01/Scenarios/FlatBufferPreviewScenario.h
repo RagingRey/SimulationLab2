@@ -9,6 +9,9 @@
 #include <glm/glm.hpp>
 #include <vector>
 #include <string>
+#include <thread>
+#include <mutex>
+#include <atomic>
 
 class FlatBufferPreviewScenario : public Scenario {
 private:
@@ -65,6 +68,12 @@ private:
     uint32_t m_NetTick = 0;
     uint32_t m_NextObjectId = 1;
 
+    std::thread m_NetworkThread;
+    std::atomic<bool> m_RunNetworkThread{ false };
+    float m_NetworkTargetHz = 30.0f;
+    std::atomic<float> m_NetworkMeasuredHz{ 0.0f };
+    std::mutex m_ItemsMutex;
+
     void Clear();
     void BuildFromLoadedScene();
     void BuildFallbackScene();
@@ -81,6 +90,10 @@ private:
 
     void SendGlobalCommand(NetCommandType command, float value = 0.0f);
     void ReceiveAndApplyRemoteCommands();
+
+    void StartNetworkWorker();
+    void StopNetworkWorker();
+    void NetworkWorkerMain();
 
 public:
     explicit FlatBufferPreviewScenario(SandboxApplication* app) : Scenario(app) {}

@@ -4,8 +4,8 @@
 - FlatBuffers scene loading with defaults: `PARTIALLY DONE`
 - Peer-to-peer Winsock2 networking: `PARTIALLY DONE`
 - Distributed ownership + replication: `PARTIALLY DONE`
-- Async loops (render/network/simulation at independent Hz): `NOT STARTED`
-- Thread affinity mapping: `NOT STARTED`
+- Async loops (render/network/simulation at independent Hz): `PARTIALLY DONE`
+- Thread affinity mapping: `PARTIALLY DONE`
 - Local/global UI split for networked simulator: `PARTIALLY DONE`
 
 ### Implemented So Far (Codebase Snapshot)
@@ -49,3 +49,6 @@
   - `Play`, `Pause`, `Reset`
   - `TimeStep`, `SimulationSpeed`
   - Commands now apply cross-peer in FlatBuffer Preview during runtime.
+- 2026-04-03: **PARTIALLY DONE** — Added independent network tick loop (async worker thread) with adjustable Hz and runtime measured frequency display in FlatBuffer Preview.
+- 2026-04-03: **PARTIALLY DONE** — Added initial thread affinity scaffolding for network thread (Windows core mask assignment).
+- 2026-04-03: Runtime validation passed for replicated `Global Reset` (cross-peer reset + no crash after threading/ordering fixes).

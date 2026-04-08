@@ -17,6 +17,16 @@
 #include <limits>
 #include <filesystem>
 
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <Windows.h>
+#endif
+
 // Validation layers
 const std::vector<const char*> validationLayers = {
     "VK_LAYER_KHRONOS_validation"
@@ -88,12 +98,16 @@ void SandboxApplication::Run() {
     initVulkan();
     initImGui();
     initScenarios();
+    StartSimulationWorker();
     mainLoop();
+    StopSimulationWorker();
     cleanup();
 }
 
 void SandboxApplication::ChangeScenario(int index) {
     if (index < 0 || index >= static_cast<int>(m_ScenarioFactories.size())) return;
+
+    std::lock_guard<std::recursive_mutex> guard(m_ScenarioMutex);
 
     if (m_CurrentScenario) {
         m_CurrentScenario->OnUnload();
@@ -106,11 +120,15 @@ void SandboxApplication::ChangeScenario(int index) {
 }
 
 void SandboxApplication::Stop() {
-    m_IsPaused = true;
+    m_IsPaused.store(true);
+
+    std::lock_guard<std::recursive_mutex> guard(m_ScenarioMutex);
     if (m_CurrentScenario) {
         m_CurrentScenario->OnUnload();
-        m_CurrentScenario->OnLoad();  // Reset
+        m_CurrentScenario->OnLoad();
     }
+
+    m_AccumulatedTime = 0.0f;
 }
 
 void SandboxApplication::initWindow() {
@@ -212,8 +230,8 @@ void SandboxApplication::initScenarios() {
 }
 
 void SandboxApplication::StepOnce() {
-    m_IsPaused = true;
-    m_StepRequested = true;
+    m_IsPaused.store(true);
+    m_StepRequested.store(true);
 }
 
 void SandboxApplication::mainLoop() {
@@ -227,23 +245,9 @@ void SandboxApplication::mainLoop() {
         lastTime = currentTime;
 
         ProcessInput(deltaTime);
-
-        if (m_CurrentScenario) {
-            if (!m_IsPaused) {
-                m_AccumulatedTime += deltaTime * m_SimulationSpeed;
-                while (m_AccumulatedTime >= m_TimeStep) {
-                    m_CurrentScenario->OnUpdate(m_TimeStep);
-                    m_AccumulatedTime -= m_TimeStep;
-                }
-            }
-            else if (m_StepRequested) {
-                m_CurrentScenario->OnUpdate(m_TimeStep);
-                m_StepRequested = false;
-            }
-        }
-
         drawFrame();
     }
+
     vkDeviceWaitIdle(m_Device);
 }
 
@@ -291,6 +295,70 @@ void SandboxApplication::cleanup() {
 
     glfwDestroyWindow(m_Window);
     glfwTerminate();
+}
+
+void SandboxApplication::StartSimulationWorker() {
+    if (m_RunSimulationThread.exchange(true)) {
+        return;
+    }
+
+    m_SimulationThread = std::thread([this]() { SimulationWorkerMain(); });
+
+#ifdef _WIN32
+    SetThreadAffinityMask(
+        reinterpret_cast<HANDLE>(m_SimulationThread.native_handle()),
+        static_cast<DWORD_PTR>(1ull << 1)
+    );
+#endif
+}
+
+void SandboxApplication::StopSimulationWorker() {
+    if (!m_RunSimulationThread.exchange(false)) {
+        return;
+    }
+
+    if (m_SimulationThread.joinable()) {
+        m_SimulationThread.join();
+    }
+}
+
+void SandboxApplication::SimulationWorkerMain() {
+    using clock = std::chrono::steady_clock;
+    auto last = clock::now();
+
+    while (m_RunSimulationThread.load()) {
+        auto now = clock::now();
+        float frameDt = std::chrono::duration<float>(now - last).count();
+        last = now;
+
+        const float timeStep = m_TimeStep.load();
+        const float simSpeed = m_SimulationSpeed.load();
+
+        if (!m_IsPaused.load()) {
+            m_AccumulatedTime += frameDt * simSpeed;
+
+            while (m_AccumulatedTime >= timeStep) {
+                std::lock_guard<std::recursive_mutex> guard(m_ScenarioMutex);
+                if (m_CurrentScenario) {
+                    m_CurrentScenario->OnUpdate(timeStep);
+                }
+                m_AccumulatedTime -= timeStep;
+            }
+        }
+        else if (m_StepRequested.exchange(false)) {
+            std::lock_guard<std::recursive_mutex> guard(m_ScenarioMutex);
+            if (m_CurrentScenario) {
+                m_CurrentScenario->OnUpdate(timeStep);
+            }
+        }
+
+        if (frameDt > 0.0001f) {
+            m_MeasuredSimulationTickHz.store(1.0f / frameDt);
+        }
+
+        const float simHz = std::max(1.0f, m_SimulationTickHz.load());
+        std::this_thread::sleep_for(std::chrono::duration<float>(1.0f / simHz));
+    }
 }
 
 void SandboxApplication::framebufferResizeCallback(GLFWwindow* window, int width, int height) {
@@ -814,6 +882,7 @@ void SandboxApplication::drawFrame() {
     m_UILayer->RenderControlPanel(this);
 
     if (m_CurrentScenario) {
+        std::lock_guard<std::recursive_mutex> guard(m_ScenarioMutex);
         m_CurrentScenario->OnImGui();
     }
 
@@ -972,6 +1041,7 @@ void SandboxApplication::recordCommandBuffer(VkCommandBuffer commandBuffer, uint
         &m_DescriptorSets[m_CurrentFrame], 0, nullptr);
 
     if (m_CurrentScenario) {
+        std::lock_guard<std::recursive_mutex> guard(m_ScenarioMutex);
         m_CurrentScenario->OnRender(commandBuffer);
     }
     else {

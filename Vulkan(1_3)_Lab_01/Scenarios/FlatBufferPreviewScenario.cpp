@@ -1,3 +1,13 @@
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <Windows.h>
+#endif
+
 #include "FlatBufferPreviewScenario.h"
 
 #define GLM_ENABLE_EXPERIMENTAL
@@ -6,7 +16,7 @@
 #include <glm/gtx/quaternion.hpp>
 #include <algorithm>
 #include <cmath>
-
+#include <chrono>
 namespace
 {
     glm::vec3 ColorForIndex(size_t i)
@@ -227,6 +237,7 @@ void FlatBufferPreviewScenario::OnLoad() {
     m_NetTick = 0;
     BuildFromLoadedScene();
     RefreshOwnershipFlagsAndStats();
+    StartNetworkWorker();
 }
 
 void FlatBufferPreviewScenario::OnUpdate(float deltaTime) {
@@ -281,7 +292,7 @@ void FlatBufferPreviewScenario::OnUpdate(float deltaTime) {
         return out;
         };
 
-    ReceiveRemoteSimulatedStates();
+    std::lock_guard<std::mutex> lock(m_ItemsMutex);
 
     for (auto& item : m_Items) {
         if (item.behaviourType != SimRuntime::BehaviourType::Animated || item.waypoints.size() < 2) {
@@ -374,11 +385,11 @@ void FlatBufferPreviewScenario::OnUpdate(float deltaTime) {
 
         item.model = BuildModelMatrix(item.baseTransform);
     }
-
-    SendOwnedSimulatedStates();
 }
 
 void FlatBufferPreviewScenario::OnRender(VkCommandBuffer commandBuffer) {
+    std::lock_guard<std::mutex> lock(m_ItemsMutex);
+
     auto& material = m_App->GetMaterialSettings();
 
     auto drawItem = [&](const RenderItem& item) {
@@ -416,6 +427,8 @@ void FlatBufferPreviewScenario::OnRender(VkCommandBuffer commandBuffer) {
 }
 
 void FlatBufferPreviewScenario::OnUnload() {
+    StopNetworkWorker();
+
     if (m_NetworkingActive) {
         m_Network.Shutdown();
         m_NetworkingActive = false;
@@ -498,6 +511,9 @@ void FlatBufferPreviewScenario::OnImGui() {
 
     ImGui::Text("Network Status: %s", m_NetworkingActive ? "ACTIVE" : "INACTIVE");
 
+    ImGui::SliderFloat("Network Tick Hz", &m_NetworkTargetHz, 1.0f, 120.0f, "%.1f");
+    ImGui::Text("Measured Network Hz: %.1f", m_NetworkMeasuredHz.load());
+
     ImGui::Separator();
     ImGui::Text("Global Command Replication");
 
@@ -512,8 +528,8 @@ void FlatBufferPreviewScenario::OnImGui() {
     }
     ImGui::SameLine();
     if (ImGui::Button("Global Reset")) {
-        m_App->Stop();
         SendGlobalCommand(NetCommandType::Reset);
+        m_App->Stop();
     }
 
     float ts = m_App->GetTimeStep();
@@ -665,5 +681,59 @@ void FlatBufferPreviewScenario::ReceiveAndApplyRemoteCommands()
         default:
             break;
         }
+    }
+}
+
+void FlatBufferPreviewScenario::StartNetworkWorker()
+{
+    if (m_RunNetworkThread.exchange(true)) {
+        return;
+    }
+
+    m_NetworkThread = std::thread([this]() { NetworkWorkerMain(); });
+
+#ifdef _WIN32
+    SetThreadAffinityMask(
+        reinterpret_cast<HANDLE>(m_NetworkThread.native_handle()),
+        static_cast<DWORD_PTR>(1ull << 0)
+    );
+#endif
+}
+
+void FlatBufferPreviewScenario::StopNetworkWorker()
+{
+    if (!m_RunNetworkThread.exchange(false)) {
+        return;
+    }
+
+    if (m_NetworkThread.joinable()) {
+        m_NetworkThread.join();
+    }
+}
+
+void FlatBufferPreviewScenario::NetworkWorkerMain()
+{
+    using clock = std::chrono::steady_clock;
+    auto last = clock::now();
+
+    while (m_RunNetworkThread.load()) {
+        const float hz = std::max(1.0f, m_NetworkTargetHz);
+        const auto step = std::chrono::duration<float>(1.0f / hz);
+
+        auto now = clock::now();
+        const float dt = std::chrono::duration<float>(now - last).count();
+        last = now;
+
+        {
+            std::lock_guard<std::mutex> lock(m_ItemsMutex);
+            ReceiveRemoteSimulatedStates();
+            SendOwnedSimulatedStates();
+        }
+
+        if (dt > 0.0001f) {
+            m_NetworkMeasuredHz.store(1.0f / dt);
+        }
+
+        std::this_thread::sleep_for(step);
     }
 }

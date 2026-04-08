@@ -199,6 +199,13 @@ void ImGuiLayer::RenderControlPanel(SandboxApplication* app) {
         app->SetSimulationSpeed(simSpeed);
     }
 
+    float simTickHz = app->GetSimulationTickHz();
+    if (ImGui::SliderFloat("Sim Tick Hz", &simTickHz, 10.0f, 240.0f, "%.1f")) {
+        app->SetSimulationTickHz(simTickHz);
+    }
+
+    ImGui::Text("Measured Sim Tick Hz: %.1f", app->GetMeasuredSimulationTickHz());
+
     const char* methods[] = { "Explicit Euler", "Semi-Implicit Euler" };
     int current = static_cast<int>(app->GetIntegrationMethod());
     if (ImGui::Combo("Integrator", &current, methods, IM_ARRAYSIZE(methods))) {

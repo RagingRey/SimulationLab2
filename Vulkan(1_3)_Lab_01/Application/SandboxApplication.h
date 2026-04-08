@@ -21,6 +21,10 @@
 #include <string>
 #include <array>
 
+#include <thread>
+#include <mutex>
+#include <atomic>
+
 // --- Configuration ---
 constexpr uint32_t WIDTH = 1280;
 constexpr uint32_t HEIGHT = 720;
@@ -78,16 +82,22 @@ public:
     const MaterialSettings& GetMaterialSettings() const { return m_MaterialSettings; }
 
     // --- Simulation Controls ---
-    void Play() { m_IsPaused = false; }
-    void Pause() { m_IsPaused = true; }
-    void TogglePause() { m_IsPaused = !m_IsPaused; }
+    void Play() { m_IsPaused.store(false); }
+    void Pause() { m_IsPaused.store(true); }
+    void TogglePause() { m_IsPaused.store(!m_IsPaused.load()); }
     void Stop();
     void StepOnce();
-    bool IsPaused() const { return m_IsPaused; }
-    void SetTimeStep(float dt) { m_TimeStep = dt; }
-    float GetTimeStep() const { return m_TimeStep; }
-    void SetSimulationSpeed(float speed) { m_SimulationSpeed = speed; }
-    float GetSimulationSpeed() const { return m_SimulationSpeed; }
+    bool IsPaused() const { return m_IsPaused.load(); }
+
+    void SetTimeStep(float dt) { m_TimeStep.store(dt); }
+    float GetTimeStep() const { return m_TimeStep.load(); }
+
+    void SetSimulationSpeed(float speed) { m_SimulationSpeed.store(speed); }
+    float GetSimulationSpeed() const { return m_SimulationSpeed.load(); }
+
+    void SetSimulationTickHz(float hz) { m_SimulationTickHz.store(hz); }
+    float GetSimulationTickHz() const { return m_SimulationTickHz.load(); }
+    float GetMeasuredSimulationTickHz() const { return m_MeasuredSimulationTickHz.load(); }
 
     void SetIntegrationMethod(IntegrationMethod method) { m_IntegrationMethod = method; }
     IntegrationMethod GetIntegrationMethod() const { return m_IntegrationMethod; }
@@ -131,6 +141,10 @@ private:
     void initScenarios();
     void mainLoop();
     void cleanup();
+
+    void StartSimulationWorker();
+    void StopSimulationWorker();
+    void SimulationWorkerMain();
 
     // --- Vulkan Setup ---
     void createInstance();
@@ -245,11 +259,17 @@ private:
     std::unique_ptr<ImGuiLayer> m_UILayer;
 
     // --- Simulation State ---
-    bool m_IsPaused = true;
-    bool m_StepRequested = false;
-    float m_TimeStep = 1.0f / 60.0f;
-    float m_SimulationSpeed = 1.0f;
+    std::atomic<bool> m_IsPaused{ true };
+    std::atomic<bool> m_StepRequested{ false };
+    std::atomic<float> m_TimeStep{ 1.0f / 60.0f };
+    std::atomic<float> m_SimulationSpeed{ 1.0f };
+    std::atomic<float> m_SimulationTickHz{ 120.0f };
+    std::atomic<float> m_MeasuredSimulationTickHz{ 0.0f };
     float m_AccumulatedTime = 0.0f;
+
+    std::thread m_SimulationThread;
+    std::atomic<bool> m_RunSimulationThread{ false };
+    mutable std::recursive_mutex m_ScenarioMutex;
 
     IntegrationMethod m_IntegrationMethod = IntegrationMethod::SemiImplicitEuler;
 

@@ -20,8 +20,8 @@
 - Peer-to-peer networking (Winsock2): `PARTIALLY DONE`
 - Distributed ownership (ONE/TWO/THREE/FOUR): `PARTIALLY DONE`
 - Owner-driven simulation + per-frame state replication: `PARTIALLY DONE`
-- Async component frequencies (render/network/simulation): `NOT STARTED`
-- Thread affinity mapping (core 1 / 2-3 / 4+): `NOT STARTED`
+- Async component frequencies (render/network/simulation): `PARTIALLY DONE`
+- Thread affinity mapping (core 1 / 2-3 / 4+): `PARTIALLY DONE`
 
 ## UI Requirements
 - Local UI controls: `PARTIALLY DONE`
@@ -51,3 +51,5 @@
 - 2026-04-03: Added UDP Winsock2 baseline (`NetworkPeer`) and integrated state send/receive in FlatBuffer Preview.
 - 2026-04-03: Validated dual-instance loopback replication (`127.0.0.1`, 25000↔25001) for owner-driven simulated cuboid state transfer.
 - 2026-04-03: Added global command replication over UDP for `Play`, `Pause`, `Reset`, `TimeStep`, and `Speed`; verified sync behavior across peers.
+- 2026-04-03: Added asynchronous network worker loop in `FlatBufferPreviewScenario` with independent target frequency and measured Hz reporting. Added initial thread affinity scaffolding for network worker.
+- 2026-04-03: Fixed replicated global reset path ordering and thread-lock interaction; `Global Reset` now safely applies across peers without runtime abort.
