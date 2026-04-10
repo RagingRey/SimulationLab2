@@ -69,3 +69,7 @@
 - 2026-04-09: **PARTIALLY DONE** — Added independent graphics/render frequency control (`Render Tick Hz`) and measured render rate reporting via ImGui, decoupled from simulation/network loop rates.
 - 2026-04-09: **PARTIALLY DONE** — Added runtime spawner execution in `FlatBufferPreviewScenario` (SingleBurst/Repeating + Fixed/RandomBox/RandomSphere) with ownership assignment including `SEQUENTIAL` round-robin.
 - 2026-04-09: **PARTIALLY DONE** — Added owner-authoritative spawner distribution path in `FlatBufferPreviewScenario`: only spawner authority creates runtime spawned objects and distributes spawn events across peers before state replication.
+- 2026-04-11: Stabilized network threading path by moving command receive to network worker and making `m_NetworkingActive` atomic.
+- 2026-04-11: Added owner-side simulated object-vs-object collision response in `FlatBufferPreviewScenario::OnUpdate`.
+- 2026-04-11: Added networking ease-of-configuration presets (`Preset A`, `Preset B`, `Swap Ports`) in FlatBuffer Preview UI.
+- 2026-04-11: Startup auto-`RequestResync` left disabled for stability in mark-focused baseline path.

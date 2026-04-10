@@ -83,7 +83,7 @@ private:
     int m_RemoteSimulatedCount = 0;
 
     NetworkPeer m_Network;
-    bool m_NetworkingActive = false;
+    std::atomic<bool> m_NetworkingActive { false};
     int m_LocalPort = 25000;
     int m_RemotePort = 25001;
     char m_RemoteIp[64] = "127.0.0.1";
@@ -103,6 +103,8 @@ private:
     std::atomic<float> m_EmuBaseLatencyMs{ 100.0f };
     std::atomic<float> m_EmuJitterMs{ 50.0f };
     std::atomic<float> m_EmuLossPercent{ 20.0f };
+
+    std::atomic<bool> m_ResyncSnapshotRequested{ false };
 
     struct DelayedStatePacket {
         SimStatePacket packet{};
@@ -150,6 +152,8 @@ private:
     bool IsSpawnerAuthority(const SpawnerRuntime& s) const;
     void SendSpawnPacketForItem(const RenderItem& item, SimRuntime::SpawnerShapeType shape, float radius, float height, const glm::vec3& size);
     void ReceiveRemoteSpawnPackets();
+
+    void SendResyncSnapshot();
 
 public:
     explicit FlatBufferPreviewScenario(SandboxApplication* app) : Scenario(app) {}

@@ -120,3 +120,7 @@
 - 2026-04-09: **PARTIALLY DONE** — Implemented asynchronous render frequency control (`Render Tick Hz`) with runtime measurement, enabling independent render/sim/network frequency demonstration.
 - 2026-04-09: **PARTIALLY DONE** — Implemented runtime spawners in `FlatBufferPreviewScenario` with owner assignment (`ONE..FOUR` and `SEQUENTIAL`) and local/remote ownership stats refresh.
 - 2026-04-09: **PARTIALLY DONE** — Extended distributed ownership for spawners: runtime spawned objects are now authoritatively created by spawner owner and distributed over UDP using explicit spawn packets, including `SEQUENTIAL` owner assignment rotation.
+- 2026-04-11: Network receive path consolidated to network worker thread; `m_NetworkingActive` converted to atomic for thread-safe start/stop state.
+- 2026-04-11: Implemented owner-driven object-vs-object collision response for simulated objects in FlatBuffer Preview runtime.
+- 2026-04-11: Added network configuration quick presets (`127.0.0.1`, `25000↔25001`) and port swap UI action.
+- 2026-04-11: Kept startup `RequestResync` trigger disabled to preserve stable live replication baseline.

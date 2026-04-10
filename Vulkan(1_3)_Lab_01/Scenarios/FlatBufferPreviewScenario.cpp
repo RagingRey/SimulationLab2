@@ -195,7 +195,7 @@ bool FlatBufferPreviewScenario::IsSpawnerAuthority(const SpawnerRuntime& s) cons
 
 void FlatBufferPreviewScenario::SendSpawnPacketForItem(const RenderItem& item, SimRuntime::SpawnerShapeType shape, float radius, float height, const glm::vec3& size)
 {
-    if (!m_NetworkingActive) return;
+    if (!m_NetworkingActive.load()) return;
 
     SimSpawnPacket p{};
     p.objectId = item.objectId;
@@ -223,7 +223,7 @@ void FlatBufferPreviewScenario::SendSpawnPacketForItem(const RenderItem& item, S
 
 void FlatBufferPreviewScenario::ReceiveRemoteSpawnPackets()
 {
-    if (!m_NetworkingActive) return;
+    if (!m_NetworkingActive.load()) return;
 
     const auto packets = m_Network.ReceiveSpawns();
     for (const auto& p : packets) {
@@ -282,6 +282,46 @@ void FlatBufferPreviewScenario::ReceiveRemoteSpawnPackets()
     }
 
     RefreshOwnershipFlagsAndStats();
+}
+
+void FlatBufferPreviewScenario::SendResyncSnapshot()
+{
+    if (!m_NetworkingActive.load()) return;
+
+    std::lock_guard<std::mutex> lock(m_ItemsMutex);
+
+    for (const auto& item : m_Items) {
+        if (!item.spawnedBySpawner || !item.isSimulated) continue;
+
+        SimRuntime::SpawnerShapeType shape = SimRuntime::SpawnerShapeType::Sphere;
+        float radius = item.boundRadius;
+        float height = 0.0f;
+        glm::vec3 size(0.0f);
+
+        if (item.name.find("Cuboid") != std::string::npos || item.name.find("cuboid") != std::string::npos) {
+            shape = SimRuntime::SpawnerShapeType::Cuboid;
+            const float d = std::max(0.05f, item.boundRadius * 2.0f);
+            size = glm::vec3(d);
+        }
+
+        SendSpawnPacketForItem(item, shape, radius, height, size);
+    }
+
+    for (const auto& item : m_Items) {
+        if (!item.isSimulated || !item.isLocallyOwned) continue;
+
+        SimStatePacket p{};
+        p.objectId = item.objectId;
+        p.owner = static_cast<uint8_t>(item.owner);
+        p.pos[0] = item.baseTransform.position.x;
+        p.pos[1] = item.baseTransform.position.y;
+        p.pos[2] = item.baseTransform.position.z;
+        p.vel[0] = item.linearVelocity.x;
+        p.vel[1] = item.linearVelocity.y;
+        p.vel[2] = item.linearVelocity.z;
+        p.tick = m_NetTick;
+        m_Network.SendState(p);
+    }
 }
 
 void FlatBufferPreviewScenario::InitRuntimeSpawnersFromScene()
@@ -808,6 +848,58 @@ void FlatBufferPreviewScenario::OnUpdate(float deltaTime) {
 
         item.model = BuildModelMatrix(item.baseTransform);
     }
+
+    // Owner-side simulated object vs object collision response
+    for (size_t i = 0; i < m_Items.size(); ++i) {
+        auto& a = m_Items[i];
+        if (!a.isSimulated || !a.isLocallyOwned || a.inverseMass <= 0.0f) {
+            continue;
+        }
+
+        for (size_t j = i + 1; j < m_Items.size(); ++j) {
+            auto& b = m_Items[j];
+            if (!b.isSimulated || !b.isLocallyOwned || b.inverseMass <= 0.0f) {
+                continue;
+            }
+
+            const glm::vec3 delta = b.baseTransform.position - a.baseTransform.position;
+            const float minDist = a.boundRadius + b.boundRadius;
+            const float distSq = glm::length2(delta);
+
+            if (distSq >= minDist * minDist) {
+                continue;
+            }
+
+            const float dist = std::sqrt(std::max(distSq, 1e-8f));
+            const glm::vec3 n = (dist > 1e-4f) ? (delta / dist) : glm::vec3(1.0f, 0.0f, 0.0f);
+
+            // positional correction
+            const float penetration = minDist - dist;
+            if (penetration > 0.0f) {
+                const glm::vec3 correction = n * (penetration * 0.5f);
+                a.baseTransform.position -= correction;
+                b.baseTransform.position += correction;
+            }
+
+            // impulse response
+            const glm::vec3 relVel = b.linearVelocity - a.linearVelocity;
+            const float velAlongNormal = glm::dot(relVel, n);
+
+            if (velAlongNormal < 0.0f) {
+                const float e = std::min(a.restitution, b.restitution);
+                const float invMassSum = a.inverseMass + b.inverseMass;
+                if (invMassSum > 0.0f) {
+                    const float jImpulse = -(1.0f + e) * velAlongNormal / invMassSum;
+                    const glm::vec3 impulse = jImpulse * n;
+                    a.linearVelocity -= impulse * a.inverseMass;
+                    b.linearVelocity += impulse * b.inverseMass;
+                }
+            }
+
+            a.model = BuildModelMatrix(a.baseTransform);
+            b.model = BuildModelMatrix(b.baseTransform);
+        }
+    }
 }
 
 void FlatBufferPreviewScenario::OnRender(VkCommandBuffer commandBuffer) {
@@ -852,17 +944,15 @@ void FlatBufferPreviewScenario::OnRender(VkCommandBuffer commandBuffer) {
 void FlatBufferPreviewScenario::OnUnload() {
     StopNetworkWorker();
 
-    if (m_NetworkingActive) {
+    if (m_NetworkingActive.load()) {
         m_Network.Shutdown();
-        m_NetworkingActive = false;
+        m_NetworkingActive.store(false);
     }
     Clear();
 }
 
 void FlatBufferPreviewScenario::OnImGui() {
     ImGui::Begin("FlatBuffer Preview");
-
-    ReceiveAndApplyRemoteCommands();
 
     const auto* scene = m_App->GetLoadedScene();
     if (scene) {
@@ -924,21 +1014,43 @@ void FlatBufferPreviewScenario::OnImGui() {
     ImGui::InputText("Remote IP", m_RemoteIp, IM_ARRAYSIZE(m_RemoteIp));
     ImGui::InputInt("Remote Port", &m_RemotePort);
 
-    if (!m_NetworkingActive) {
+    if (!m_NetworkingActive.load()) {
         if (ImGui::Button("Start Network")) {
             if (m_Network.Initialize(static_cast<uint16_t>(m_LocalPort))) {
-                m_NetworkingActive = m_Network.SetRemote(m_RemoteIp, static_cast<uint16_t>(m_RemotePort));
+                m_NetworkingActive.store(m_Network.SetRemote(m_RemoteIp, static_cast<uint16_t>(m_RemotePort)));
+               /* if (m_NetworkingActive.load()) {
+                    SendGlobalCommand(NetCommandType::RequestResync);
+                }*/
             }
         }
     }
     else {
         if (ImGui::Button("Stop Network")) {
             m_Network.Shutdown();
-            m_NetworkingActive = false;
+            m_NetworkingActive.store(false);
         }
     }
+    if (m_NetworkingActive.load() && ImGui::Button("Request Resync")) {
+        SendGlobalCommand(NetCommandType::RequestResync);
+    }
 
-    ImGui::Text("Network Status: %s", m_NetworkingActive ? "ACTIVE" : "INACTIVE");
+    if (ImGui::Button("Preset A (25000->25001)")) {
+        m_LocalPort = 25000;
+        m_RemotePort = 25001;
+        strncpy_s(m_RemoteIp, "127.0.0.1", _TRUNCATE);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Preset B (25001->25000)")) {
+        m_LocalPort = 25001;
+        m_RemotePort = 25000;
+        strncpy_s(m_RemoteIp, "127.0.0.1", _TRUNCATE);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Swap Ports")) {
+        std::swap(m_LocalPort, m_RemotePort);
+    }
+
+    ImGui::Text("Network Status: %s", m_NetworkingActive.load() ? "ACTIVE" : "INACTIVE");
 
     ImGui::SliderFloat("Network Tick Hz", &m_NetworkTargetHz, 1.0f, 120.0f, "%.1f");
     ImGui::Text("Measured Network Hz: %.1f", m_NetworkMeasuredHz.load());
@@ -1059,7 +1171,7 @@ FlatBufferPreviewScenario::RenderItem* FlatBufferPreviewScenario::FindItemById(u
 
 void FlatBufferPreviewScenario::SendOwnedSimulatedStates()
 {
-    if (!m_NetworkingActive) return;
+    if (!m_NetworkingActive.load()) return;
 
     for (const auto& item : m_Items) {
         if (!item.isSimulated || !item.isLocallyOwned) continue;
@@ -1083,7 +1195,7 @@ void FlatBufferPreviewScenario::SendOwnedSimulatedStates()
 
 void FlatBufferPreviewScenario::ReceiveRemoteSimulatedStates(float dt)
 {
-    if (!m_NetworkingActive) return;
+    if (!m_NetworkingActive.load()) return;
 
     auto applyPacket = [this](const SimStatePacket& p) {
         RenderItem* item = FindItemById(p.objectId);
@@ -1138,7 +1250,7 @@ void FlatBufferPreviewScenario::ReceiveRemoteSimulatedStates(float dt)
 
 void FlatBufferPreviewScenario::SendGlobalCommand(NetCommandType command, float value)
 {
-    if (!m_NetworkingActive) return;
+    if (!m_NetworkingActive.load()) return;
 
     SimCommandPacket p{};
     p.command = command;
@@ -1149,7 +1261,7 @@ void FlatBufferPreviewScenario::SendGlobalCommand(NetCommandType command, float 
 
 void FlatBufferPreviewScenario::ReceiveAndApplyRemoteCommands()
 {
-    if (!m_NetworkingActive) return;
+    if (!m_NetworkingActive.load()) return;
 
     const auto commands = m_Network.ReceiveCommands();
     for (const auto& c : commands) {
@@ -1168,6 +1280,9 @@ void FlatBufferPreviewScenario::ReceiveAndApplyRemoteCommands()
             break;
         case NetCommandType::SetSpeed:
             m_App->SetSimulationSpeed(std::max(0.0f, c.value));
+            break;
+        case NetCommandType::RequestResync:
+            m_ResyncSnapshotRequested.store(true);
             break;
         default:
             break;
@@ -1218,6 +1333,12 @@ void FlatBufferPreviewScenario::NetworkWorkerMain()
         auto now = clock::now();
         const float dt = std::chrono::duration<float>(now - last).count();
         last = now;
+
+        ReceiveAndApplyRemoteCommands();
+
+        if (m_ResyncSnapshotRequested.exchange(false)) {
+            SendResyncSnapshot();
+        }
 
         {
             std::lock_guard<std::mutex> lock(m_ItemsMutex);
