@@ -6,6 +6,7 @@
 #include "../Scenarios/OrientationScenario.h"
 #include "../Scene/SceneLoaderFlatBuffer.h"
 #include "../Scenarios/FlatBufferPreviewScenario.h"
+#include "../Scenarios/FlockingScenario.h"
 
 #include <iostream>
 #include <fstream>
@@ -25,6 +26,42 @@
 #define NOMINMAX
 #endif
 #include <Windows.h>
+#endif
+
+#ifdef _WIN32
+namespace
+{
+    DWORD_PTR GetVisualizationAffinityMask()
+    {
+        // Core 1 (spec wording) => CPU bit 0
+        const DWORD count = GetActiveProcessorCount(ALL_PROCESSOR_GROUPS);
+        if (count == 0) return 0;
+        return (static_cast<DWORD_PTR>(1) << 0);
+    }
+
+    DWORD_PTR GetSimulationAffinityMask()
+    {
+        // Core 4+ => CPU bits 3..N
+        const DWORD count = GetActiveProcessorCount(ALL_PROCESSOR_GROUPS);
+        if (count == 0) return 0;
+
+        DWORD_PTR mask = 0;
+        const DWORD maxBits = static_cast<DWORD>(sizeof(DWORD_PTR) * 8);
+        const DWORD usable = (count < maxBits) ? count : maxBits;
+
+        if (usable > 3) {
+            for (DWORD i = 3; i < usable; ++i) {
+                mask |= (static_cast<DWORD_PTR>(1) << i);
+            }
+        }
+        else {
+            // fallback on low-core systems
+            mask = (static_cast<DWORD_PTR>(1) << (usable - 1));
+        }
+
+        return mask;
+    }
+}
 #endif
 
 // Validation layers
@@ -94,6 +131,13 @@ std::array<VkVertexInputAttributeDescription, 3> Vertex::getAttributeDescription
 
 // Main entry point
 void SandboxApplication::Run() {
+#ifdef _WIN32
+    if (const DWORD_PTR visMask = GetVisualizationAffinityMask(); visMask != 0) {
+        SetThreadAffinityMask(GetCurrentThread(), visMask);
+        SetThreadDescription(GetCurrentThread(), L"VisualisationMain");
+    }
+#endif
+
     initWindow();
     initVulkan();
     initImGui();
@@ -213,6 +257,7 @@ void SandboxApplication::initScenarios() {
     }
 
     RegisterScenario<FlatBufferPreviewScenario>("FlatBuffer Preview");
+    RegisterScenario<FlockingScenario>("Flocking (Networked)");
     RegisterScenario<ClearColorScenario>("Clear Color");
     RegisterScenario<SphereDropScenario>("Sphere Drop");
     RegisterScenario<CollisionScenario>("Collision Tests");
@@ -235,14 +280,33 @@ void SandboxApplication::StepOnce() {
 }
 
 void SandboxApplication::mainLoop() {
-    auto lastTime = std::chrono::high_resolution_clock::now();
+    using clock = std::chrono::steady_clock;
+    auto lastRender = clock::now();
 
     while (!glfwWindowShouldClose(m_Window)) {
         glfwPollEvents();
 
-        auto currentTime = std::chrono::high_resolution_clock::now();
-        float deltaTime = std::chrono::duration<float>(currentTime - lastTime).count();
-        lastTime = currentTime;
+        auto now = clock::now();
+        float deltaTime = std::chrono::duration<float>(now - lastRender).count();
+
+        const float renderHz = std::max(1.0f, m_RenderTickHz.load());
+        const float targetFrame = 1.0f / renderHz;
+
+        if (deltaTime < targetFrame) {
+            std::this_thread::sleep_for(std::chrono::duration<float>(targetFrame - deltaTime));
+            now = clock::now();
+            deltaTime = std::chrono::duration<float>(now - lastRender).count();
+        }
+
+        lastRender = now;
+
+        if (deltaTime > 0.0001f) {
+            m_MeasuredRenderTickHz.store(1.0f / deltaTime);
+        }
+
+#ifdef _WIN32
+        m_LastRenderCpu.store(static_cast<int>(GetCurrentProcessorNumber()));
+#endif
 
         ProcessInput(deltaTime);
         drawFrame();
@@ -305,10 +369,17 @@ void SandboxApplication::StartSimulationWorker() {
     m_SimulationThread = std::thread([this]() { SimulationWorkerMain(); });
 
 #ifdef _WIN32
-    SetThreadAffinityMask(
-        reinterpret_cast<HANDLE>(m_SimulationThread.native_handle()),
-        static_cast<DWORD_PTR>(1ull << 1)
-    );
+    if (const DWORD_PTR simMask = GetSimulationAffinityMask(); simMask != 0) {
+        SetThreadAffinityMask(
+            reinterpret_cast<HANDLE>(m_SimulationThread.native_handle()),
+            simMask
+        );
+
+        SetThreadDescription(
+            reinterpret_cast<HANDLE>(m_SimulationThread.native_handle()),
+            L"SimulationWorker"
+        );
+    }
 #endif
 }
 
@@ -330,6 +401,10 @@ void SandboxApplication::SimulationWorkerMain() {
         auto now = clock::now();
         float frameDt = std::chrono::duration<float>(now - last).count();
         last = now;
+
+#ifdef _WIN32
+        m_LastSimulationCpu.store(static_cast<int>(GetCurrentProcessorNumber()));
+#endif
 
         const float timeStep = m_TimeStep.load();
         const float simSpeed = m_SimulationSpeed.load();

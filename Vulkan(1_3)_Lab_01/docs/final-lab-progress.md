@@ -20,21 +20,25 @@
 - Peer-to-peer networking (Winsock2): `PARTIALLY DONE`
 - Distributed ownership (ONE/TWO/THREE/FOUR): `PARTIALLY DONE`
 - Owner-driven simulation + per-frame state replication: `PARTIALLY DONE`
-- Async component frequencies (render/network/simulation): `PARTIALLY DONE`
-- Thread affinity mapping (core 1 / 2-3 / 4+): `PARTIALLY DONE`
+- Async component frequencies (render/network/simulation): `DONE`
+- Thread affinity mapping (core 1 / 2-3 / 4+): `DONE`
 
 ## UI Requirements
 - Local UI controls: `PARTIALLY DONE`
 - Global UI controls replicated across peers: `PARTIALLY DONE`
 
 ## Robustness
-- Drift correction / interpolation: `NOT STARTED`
-- Latency/loss resilience (100ms ± 50ms, 20% loss): `NOT STARTED`
+- Drift correction / interpolation: `PARTIALLY DONE`
+- Latency/loss resilience (100ms ± 50ms, 20% loss): `PARTIALLY DONE`
 
 ## Advanced Feature
-- Feature selected: `NOT STARTED`
-- Schema extension added: `NOT STARTED`
-- Runtime controls/debug visualization: `NOT STARTED`
+- Feature selected: `DONE`
+- Schema extension added: `DONE`
+- Runtime controls/debug visualization: `DONE`
+
+## Extended Advanced Feature
+- Flocking spatial segmentation (No segmentation vs Uniform Grid vs Octree): `DONE`
+- Performance comparison (memory/collision/physics update processing): `DONE`
 
 ## Implementation Log
 - 2026-03-31: Initialized final-lab progress tracker.
@@ -53,3 +57,15 @@
 - 2026-04-03: Added global command replication over UDP for `Play`, `Pause`, `Reset`, `TimeStep`, and `Speed`; verified sync behavior across peers.
 - 2026-04-03: Added asynchronous network worker loop in `FlatBufferPreviewScenario` with independent target frequency and measured Hz reporting. Added initial thread affinity scaffolding for network worker.
 - 2026-04-03: Fixed replicated global reset path ordering and thread-lock interaction; `Global Reset` now safely applies across peers without runtime abort.
+- 2026-04-03: Added remote-state drift correction/interpolation in `FlatBufferPreviewScenario` (target-state smoothing + snap threshold controls in UI).
+- 2026-04-03: **PARTIALLY DONE** — Added configurable latency/jitter/loss emulation in FlatBuffer Preview networking path for robustness testing under degraded link conditions.
+- 2026-04-03: Validated robustness under emulated degraded link; interpolation reduced visible jitter while maintaining convergence.
+- 2026-04-09: **DONE** — Extended `Scene.fbs`/generated schema with `FlockingSettings` and integrated scene-runtime loader parsing.
+- 2026-04-09: **PARTIALLY DONE** — Added `Flocking (Networked)` scenario with owner-authoritative boid simulation, remote interpolation, live runtime tuning, and packet counters (`Tx/Rx`).
+- 2026-04-09: Fixed flock reset re-entrant lock crash in `FlockingScenario` UI path.
+- 2026-04-09: **PARTIALLY DONE** — Added `UniformGrid` and `Octree` neighbor-search modes in `FlockingScenario` with runtime CPU/memory capture UI.
+- 2026-04-09: Captured baseline comparison samples (`BruteForce` vs `UniformGrid` vs `Octree`) showing update/build/memory metrics in-app.
+- 2026-04-09: **PARTIALLY DONE** — Updated thread affinity mapping toward Final Lab core allocation: visualisation pinned to core 1, networking threads to cores 2–3, simulation thread to core 4+ (with low-core fallback masks).
+- 2026-04-09: **PARTIALLY DONE** — Added independent graphics/render frequency control (`Render Tick Hz`) and measured render rate reporting via ImGui, decoupled from simulation/network loop rates.
+- 2026-04-09: **PARTIALLY DONE** — Added runtime spawner execution in `FlatBufferPreviewScenario` (SingleBurst/Repeating + Fixed/RandomBox/RandomSphere) with ownership assignment including `SEQUENTIAL` round-robin.
+- 2026-04-09: **PARTIALLY DONE** — Added owner-authoritative spawner distribution path in `FlatBufferPreviewScenario`: only spawner authority creates runtime spawned objects and distributes spawn events across peers before state replication.

@@ -102,6 +102,9 @@ struct CapsuleSpawnerBuilder;
 struct CuboidSpawner;
 struct CuboidSpawnerBuilder;
 
+struct FlockingSettings;
+struct FlockingSettingsBuilder;
+
 struct Scene;
 struct SceneBuilder;
 
@@ -2506,18 +2509,181 @@ inline ::flatbuffers::Offset<CuboidSpawner> CreateCuboidSpawner(
   return builder_.Finish();
 }
 
+struct FlockingSettings FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
+  typedef FlockingSettingsBuilder Builder;
+  enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
+    VT_ENABLED = 4,
+    VT_BOID_COUNT = 6,
+    VT_SPAWN_CENTER = 8,
+    VT_SPAWN_EXTENTS = 10,
+    VT_NEIGHBOR_RADIUS = 12,
+    VT_SEPARATION_RADIUS = 14,
+    VT_AVOIDANCE_RADIUS = 16,
+    VT_MAX_SPEED = 18,
+    VT_MAX_FORCE = 20,
+    VT_WEIGHT_COHESION = 22,
+    VT_WEIGHT_ALIGNMENT = 24,
+    VT_WEIGHT_SEPARATION = 26,
+    VT_WEIGHT_AVOIDANCE = 28
+  };
+  bool enabled() const {
+    return GetField<uint8_t>(VT_ENABLED, 0) != 0;
+  }
+  uint32_t boid_count() const {
+    return GetField<uint32_t>(VT_BOID_COUNT, 80);
+  }
+  const Simulation::Vec3 *spawn_center() const {
+    return GetStruct<const Simulation::Vec3 *>(VT_SPAWN_CENTER);
+  }
+  const Simulation::Vec3 *spawn_extents() const {
+    return GetStruct<const Simulation::Vec3 *>(VT_SPAWN_EXTENTS);
+  }
+  float neighbor_radius() const {
+    return GetField<float>(VT_NEIGHBOR_RADIUS, 3.0f);
+  }
+  float separation_radius() const {
+    return GetField<float>(VT_SEPARATION_RADIUS, 1.2f);
+  }
+  float avoidance_radius() const {
+    return GetField<float>(VT_AVOIDANCE_RADIUS, 1.5f);
+  }
+  float max_speed() const {
+    return GetField<float>(VT_MAX_SPEED, 6.0f);
+  }
+  float max_force() const {
+    return GetField<float>(VT_MAX_FORCE, 10.0f);
+  }
+  float weight_cohesion() const {
+    return GetField<float>(VT_WEIGHT_COHESION, 1.0f);
+  }
+  float weight_alignment() const {
+    return GetField<float>(VT_WEIGHT_ALIGNMENT, 1.0f);
+  }
+  float weight_separation() const {
+    return GetField<float>(VT_WEIGHT_SEPARATION, 1.5f);
+  }
+  float weight_avoidance() const {
+    return GetField<float>(VT_WEIGHT_AVOIDANCE, 2.0f);
+  }
+  template <bool B = false>
+  bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
+    return VerifyTableStart(verifier) &&
+           VerifyField<uint8_t>(verifier, VT_ENABLED, 1) &&
+           VerifyField<uint32_t>(verifier, VT_BOID_COUNT, 4) &&
+           VerifyField<Simulation::Vec3>(verifier, VT_SPAWN_CENTER, 4) &&
+           VerifyField<Simulation::Vec3>(verifier, VT_SPAWN_EXTENTS, 4) &&
+           VerifyField<float>(verifier, VT_NEIGHBOR_RADIUS, 4) &&
+           VerifyField<float>(verifier, VT_SEPARATION_RADIUS, 4) &&
+           VerifyField<float>(verifier, VT_AVOIDANCE_RADIUS, 4) &&
+           VerifyField<float>(verifier, VT_MAX_SPEED, 4) &&
+           VerifyField<float>(verifier, VT_MAX_FORCE, 4) &&
+           VerifyField<float>(verifier, VT_WEIGHT_COHESION, 4) &&
+           VerifyField<float>(verifier, VT_WEIGHT_ALIGNMENT, 4) &&
+           VerifyField<float>(verifier, VT_WEIGHT_SEPARATION, 4) &&
+           VerifyField<float>(verifier, VT_WEIGHT_AVOIDANCE, 4) &&
+           verifier.EndTable();
+  }
+};
+
+struct FlockingSettingsBuilder {
+  typedef FlockingSettings Table;
+  ::flatbuffers::FlatBufferBuilder &fbb_;
+  ::flatbuffers::uoffset_t start_;
+  void add_enabled(bool enabled) {
+    fbb_.AddElement<uint8_t>(FlockingSettings::VT_ENABLED, static_cast<uint8_t>(enabled), 0);
+  }
+  void add_boid_count(uint32_t boid_count) {
+    fbb_.AddElement<uint32_t>(FlockingSettings::VT_BOID_COUNT, boid_count, 80);
+  }
+  void add_spawn_center(const Simulation::Vec3 *spawn_center) {
+    fbb_.AddStruct(FlockingSettings::VT_SPAWN_CENTER, spawn_center);
+  }
+  void add_spawn_extents(const Simulation::Vec3 *spawn_extents) {
+    fbb_.AddStruct(FlockingSettings::VT_SPAWN_EXTENTS, spawn_extents);
+  }
+  void add_neighbor_radius(float neighbor_radius) {
+    fbb_.AddElement<float>(FlockingSettings::VT_NEIGHBOR_RADIUS, neighbor_radius, 3.0f);
+  }
+  void add_separation_radius(float separation_radius) {
+    fbb_.AddElement<float>(FlockingSettings::VT_SEPARATION_RADIUS, separation_radius, 1.2f);
+  }
+  void add_avoidance_radius(float avoidance_radius) {
+    fbb_.AddElement<float>(FlockingSettings::VT_AVOIDANCE_RADIUS, avoidance_radius, 1.5f);
+  }
+  void add_max_speed(float max_speed) {
+    fbb_.AddElement<float>(FlockingSettings::VT_MAX_SPEED, max_speed, 6.0f);
+  }
+  void add_max_force(float max_force) {
+    fbb_.AddElement<float>(FlockingSettings::VT_MAX_FORCE, max_force, 10.0f);
+  }
+  void add_weight_cohesion(float weight_cohesion) {
+    fbb_.AddElement<float>(FlockingSettings::VT_WEIGHT_COHESION, weight_cohesion, 1.0f);
+  }
+  void add_weight_alignment(float weight_alignment) {
+    fbb_.AddElement<float>(FlockingSettings::VT_WEIGHT_ALIGNMENT, weight_alignment, 1.0f);
+  }
+  void add_weight_separation(float weight_separation) {
+    fbb_.AddElement<float>(FlockingSettings::VT_WEIGHT_SEPARATION, weight_separation, 1.5f);
+  }
+  void add_weight_avoidance(float weight_avoidance) {
+    fbb_.AddElement<float>(FlockingSettings::VT_WEIGHT_AVOIDANCE, weight_avoidance, 2.0f);
+  }
+  explicit FlockingSettingsBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
+        : fbb_(_fbb) {
+    start_ = fbb_.StartTable();
+  }
+  ::flatbuffers::Offset<FlockingSettings> Finish() {
+    const auto end = fbb_.EndTable(start_);
+    auto o = ::flatbuffers::Offset<FlockingSettings>(end);
+    return o;
+  }
+};
+
+inline ::flatbuffers::Offset<FlockingSettings> CreateFlockingSettings(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    bool enabled = false,
+    uint32_t boid_count = 80,
+    const Simulation::Vec3 *spawn_center = nullptr,
+    const Simulation::Vec3 *spawn_extents = nullptr,
+    float neighbor_radius = 3.0f,
+    float separation_radius = 1.2f,
+    float avoidance_radius = 1.5f,
+    float max_speed = 6.0f,
+    float max_force = 10.0f,
+    float weight_cohesion = 1.0f,
+    float weight_alignment = 1.0f,
+    float weight_separation = 1.5f,
+    float weight_avoidance = 2.0f) {
+  FlockingSettingsBuilder builder_(_fbb);
+  builder_.add_weight_avoidance(weight_avoidance);
+  builder_.add_weight_separation(weight_separation);
+  builder_.add_weight_alignment(weight_alignment);
+  builder_.add_weight_cohesion(weight_cohesion);
+  builder_.add_max_force(max_force);
+  builder_.add_max_speed(max_speed);
+  builder_.add_avoidance_radius(avoidance_radius);
+  builder_.add_separation_radius(separation_radius);
+  builder_.add_neighbor_radius(neighbor_radius);
+  builder_.add_spawn_extents(spawn_extents);
+  builder_.add_spawn_center(spawn_center);
+  builder_.add_boid_count(boid_count);
+  builder_.add_enabled(enabled);
+  return builder_.Finish();
+}
+
 struct Scene FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   typedef SceneBuilder Builder;
   enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
     VT_NAME = 4,
     VT_DESCRIPTION = 6,
     VT_GRAVITY_ON = 8,
-    VT_CAMERAS = 10,
-    VT_OBJECTS = 12,
-    VT_SPAWNERS_TYPE = 14,
-    VT_SPAWNERS = 16,
-    VT_MATERIALS = 18,
-    VT_INTERACTIONS = 20
+    VT_FLOCKING = 10,
+    VT_CAMERAS = 12,
+    VT_OBJECTS = 14,
+    VT_SPAWNERS_TYPE = 16,
+    VT_SPAWNERS = 18,
+    VT_MATERIALS = 20,
+    VT_INTERACTIONS = 22
   };
   const ::flatbuffers::String *name() const {
     return GetPointer<const ::flatbuffers::String *>(VT_NAME);
@@ -2527,6 +2693,9 @@ struct Scene FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   }
   bool gravity_on() const {
     return GetField<uint8_t>(VT_GRAVITY_ON, 1) != 0;
+  }
+  const Simulation::FlockingSettings *flocking() const {
+    return GetPointer<const Simulation::FlockingSettings *>(VT_FLOCKING);
   }
   const ::flatbuffers::Vector<::flatbuffers::Offset<Simulation::Camera>> *cameras() const {
     return GetPointer<const ::flatbuffers::Vector<::flatbuffers::Offset<Simulation::Camera>> *>(VT_CAMERAS);
@@ -2554,6 +2723,8 @@ struct Scene FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
            VerifyOffset(verifier, VT_DESCRIPTION) &&
            verifier.VerifyString(description()) &&
            VerifyField<uint8_t>(verifier, VT_GRAVITY_ON, 1) &&
+           VerifyOffset(verifier, VT_FLOCKING) &&
+           verifier.VerifyTable(flocking()) &&
            VerifyOffset(verifier, VT_CAMERAS) &&
            verifier.VerifyVector(cameras()) &&
            verifier.VerifyVectorOfTables(cameras()) &&
@@ -2587,6 +2758,9 @@ struct SceneBuilder {
   }
   void add_gravity_on(bool gravity_on) {
     fbb_.AddElement<uint8_t>(Scene::VT_GRAVITY_ON, static_cast<uint8_t>(gravity_on), 1);
+  }
+  void add_flocking(::flatbuffers::Offset<Simulation::FlockingSettings> flocking) {
+    fbb_.AddOffset(Scene::VT_FLOCKING, flocking);
   }
   void add_cameras(::flatbuffers::Offset<::flatbuffers::Vector<::flatbuffers::Offset<Simulation::Camera>>> cameras) {
     fbb_.AddOffset(Scene::VT_CAMERAS, cameras);
@@ -2622,6 +2796,7 @@ inline ::flatbuffers::Offset<Scene> CreateScene(
     ::flatbuffers::Offset<::flatbuffers::String> name = 0,
     ::flatbuffers::Offset<::flatbuffers::String> description = 0,
     bool gravity_on = true,
+    ::flatbuffers::Offset<Simulation::FlockingSettings> flocking = 0,
     ::flatbuffers::Offset<::flatbuffers::Vector<::flatbuffers::Offset<Simulation::Camera>>> cameras = 0,
     ::flatbuffers::Offset<::flatbuffers::Vector<::flatbuffers::Offset<Simulation::Object>>> objects = 0,
     ::flatbuffers::Offset<::flatbuffers::Vector<uint8_t>> spawners_type = 0,
@@ -2635,6 +2810,7 @@ inline ::flatbuffers::Offset<Scene> CreateScene(
   builder_.add_spawners_type(spawners_type);
   builder_.add_objects(objects);
   builder_.add_cameras(cameras);
+  builder_.add_flocking(flocking);
   builder_.add_description(description);
   builder_.add_name(name);
   builder_.add_gravity_on(gravity_on);
@@ -2646,6 +2822,7 @@ inline ::flatbuffers::Offset<Scene> CreateSceneDirect(
     const char *name = nullptr,
     const char *description = nullptr,
     bool gravity_on = true,
+    ::flatbuffers::Offset<Simulation::FlockingSettings> flocking = 0,
     const std::vector<::flatbuffers::Offset<Simulation::Camera>> *cameras = nullptr,
     const std::vector<::flatbuffers::Offset<Simulation::Object>> *objects = nullptr,
     const std::vector<uint8_t> *spawners_type = nullptr,
@@ -2665,6 +2842,7 @@ inline ::flatbuffers::Offset<Scene> CreateSceneDirect(
       name__,
       description__,
       gravity_on,
+      flocking,
       cameras__,
       objects__,
       spawners_type__,

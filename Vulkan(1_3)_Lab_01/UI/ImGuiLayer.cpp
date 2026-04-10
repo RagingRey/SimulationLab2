@@ -206,6 +206,15 @@ void ImGuiLayer::RenderControlPanel(SandboxApplication* app) {
 
     ImGui::Text("Measured Sim Tick Hz: %.1f", app->GetMeasuredSimulationTickHz());
 
+    float renderTickHz = app->GetRenderTickHz();
+    if (ImGui::SliderFloat("Render Tick Hz", &renderTickHz, 10.0f, 240.0f, "%.1f")) {
+        app->SetRenderTickHz(renderTickHz);
+    }
+
+    ImGui::Text("Measured Render Tick Hz: %.1f", app->GetMeasuredRenderTickHz());
+    ImGui::Text("Render CPU Index: %d (expected 0)", app->GetLastRenderCpu());
+    ImGui::Text("Sim CPU Index: %d (expected >=3)", app->GetLastSimulationCpu());
+
     const char* methods[] = { "Explicit Euler", "Semi-Implicit Euler" };
     int current = static_cast<int>(app->GetIntegrationMethod());
     if (ImGui::Combo("Integrator", &current, methods, IM_ARRAYSIZE(methods))) {

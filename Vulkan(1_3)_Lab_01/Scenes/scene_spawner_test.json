@@ -1,0 +1,116 @@
+{
+  "name": "Spawner Test Scene",
+  "description": "SingleBurst + Repeating + SEQUENTIAL ownership test",
+  "gravity_on": true,
+
+  "flocking": {
+    "enabled": false,
+    "boid_count": 80,
+    "spawn_center": { "x": 0.0, "y": 2.0, "z": 0.0 },
+    "spawn_extents": { "x": 8.0, "y": 3.0, "z": 8.0 }
+  },
+
+  "cameras": [
+    {
+      "name": "MainCam",
+      "transform": {
+        "position": { "x": 0.0, "y": 6.0, "z": 14.0 },
+        "orientation": { "yaw": 0.0, "pitch": 0.0, "roll": 0.0 },
+        "scale": { "x": 1.0, "y": 1.0, "z": 1.0 }
+      },
+      "camera_type_type": "PerspectiveCamera",
+      "camera_type": { "fov": 60.0, "near": 0.1, "far": 200.0 }
+    }
+  ],
+
+  "objects": [
+    {
+      "name": "Ground",
+      "transform": {
+        "position": { "x": 0.0, "y": 0.0, "z": 0.0 },
+        "orientation": { "yaw": 0.0, "pitch": 0.0, "roll": 0.0 },
+        "scale": { "x": 1.0, "y": 1.0, "z": 1.0 }
+      },
+      "material": "default",
+      "shape_type": "Plane",
+      "shape": { "normal": { "x": 0.0, "y": 1.0, "z": 0.0 } },
+      "behaviour_type": "StaticObject",
+      "behaviour": {},
+      "collision_type": "SOLID"
+    }
+  ],
+
+  "spawners_type": [
+    "SphereSpawner",
+    "CuboidSpawner"
+  ],
+  "spawners": [
+    {
+      "base": {
+        "name": "BurstOwnerOne",
+        "start_time": 0.5,
+        "spawn_type_type": "SingleBurstSpawn",
+        "spawn_type": { "count": 10 },
+        "location_type": "FixedLocation",
+        "location": {
+          "transform": {
+            "position": { "x": -2.0, "y": 4.0, "z": 0.0 },
+            "orientation": { "yaw": 0.0, "pitch": 0.0, "roll": 0.0 },
+            "scale": { "x": 1.0, "y": 1.0, "z": 1.0 }
+          }
+        },
+        "linear_velocity": {
+          "min": { "x": -1.0, "y": -1.0, "z": -1.0 },
+          "max": { "x":  1.0, "y":  1.0, "z":  1.0 }
+        },
+        "angular_velocity": {
+          "min": { "x": 0.0, "y": 0.0, "z": 0.0 },
+          "max": { "x": 0.0, "y": 0.0, "z": 0.0 }
+        },
+        "material": "default",
+        "owner": "ONE"
+      },
+      "radius_range": { "min": 0.25, "max": 0.45 }
+    },
+    {
+      "base": {
+        "name": "RepeatSequential",
+        "start_time": 1.0,
+        "spawn_type_type": "RepeatingSpawn",
+        "spawn_type": { "interval": 0.25, "max_count": 24 },
+        "location_type": "RandomBox",
+        "location": {
+          "min": { "x": 1.0, "y": 3.0, "z": -2.0 },
+          "max": { "x": 4.0, "y": 5.0, "z":  2.0 }
+        },
+        "linear_velocity": {
+          "min": { "x": -0.5, "y": -0.2, "z": -0.5 },
+          "max": { "x":  0.5, "y":  0.8, "z":  0.5 }
+        },
+        "angular_velocity": {
+          "min": { "x": 0.0, "y": 0.0, "z": 0.0 },
+          "max": { "x": 0.0, "y": 0.0, "z": 0.0 }
+        },
+        "material": "default",
+        "owner": "SEQUENTIAL"
+      },
+      "size_range": {
+        "min": { "x": 0.25, "y": 0.25, "z": 0.25 },
+        "max": { "x": 0.60, "y": 0.60, "z": 0.60 }
+      }
+    }
+  ],
+
+  "materials": [
+    { "name": "default", "density": 1000.0 }
+  ],
+  "interactions": [
+    {
+      "material_a": "default",
+      "material_b": "default",
+      "restitution": 0.45,
+      "static_friction": 0.60,
+      "dynamic_friction": 0.50
+    }
+  ]
+}

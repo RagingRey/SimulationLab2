@@ -219,3 +219,74 @@ std::vector<SimCommandPacket> NetworkPeer::ReceiveCommands() {
 
     return out;
 }
+
+bool NetworkPeer::SendSpawn(const SimSpawnPacket& packet) {
+    if (!m_Initialized || !m_HasRemote) return false;
+
+    sockaddr_in remote{};
+    remote.sin_family = AF_INET;
+    remote.sin_port = htons(m_RemotePort);
+    remote.sin_addr.s_addr = m_RemoteAddr;
+
+    SOCKET s = static_cast<SOCKET>(m_Socket);
+    const int sent = sendto(
+        s,
+        reinterpret_cast<const char*>(&packet),
+        static_cast<int>(sizeof(SimSpawnPacket)),
+        0,
+        reinterpret_cast<sockaddr*>(&remote),
+        sizeof(remote)
+    );
+
+    return sent == sizeof(SimSpawnPacket);
+}
+
+std::vector<SimSpawnPacket> NetworkPeer::ReceiveSpawns() {
+    std::vector<SimSpawnPacket> out;
+    if (!m_Initialized) return out;
+
+    SOCKET s = static_cast<SOCKET>(m_Socket);
+
+    while (true) {
+        sockaddr_in from{};
+        int fromLen = sizeof(from);
+
+        char peekBuffer[256]{};
+        const int peeked = recvfrom(
+            s,
+            peekBuffer,
+            static_cast<int>(sizeof(peekBuffer)),
+            MSG_PEEK,
+            reinterpret_cast<sockaddr*>(&from),
+            &fromLen
+        );
+
+        if (peeked == SOCKET_ERROR) {
+            const int err = WSAGetLastError();
+            if (err == WSAEWOULDBLOCK) break;
+            break;
+        }
+
+        if (peeked != sizeof(SimSpawnPacket)) break;
+
+        SimSpawnPacket p{};
+        fromLen = sizeof(from);
+        const int received = recvfrom(
+            s,
+            reinterpret_cast<char*>(&p),
+            static_cast<int>(sizeof(SimSpawnPacket)),
+            0,
+            reinterpret_cast<sockaddr*>(&from),
+            &fromLen
+        );
+
+        if (received == sizeof(SimSpawnPacket)) {
+            out.push_back(p);
+        }
+        else {
+            break;
+        }
+    }
+
+    return out;
+}

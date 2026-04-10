@@ -157,6 +157,36 @@ SimRuntime::SceneLoadResult SimRuntime::SceneLoaderFlatBuffer::LoadFromFile(cons
     result.scene.description = fbsScene->description() ? fbsScene->description()->str() : "";
     result.scene.gravityOn = fbsScene->gravity_on();
 
+    // Flocking settings (advanced feature)
+    if (const auto* flock = fbsScene->flocking())
+    {
+        auto& f = result.scene.flocking;
+        f.enabled = flock->enabled();
+        f.boidCount = flock->boid_count();
+
+        f.spawnCenter = ToVec3(flock->spawn_center(), glm::vec3(0.0f, 2.0f, 0.0f));
+        f.spawnExtents = ToVec3(flock->spawn_extents(), glm::vec3(8.0f, 3.0f, 8.0f));
+
+        f.neighborRadius = flock->neighbor_radius();
+        f.separationRadius = flock->separation_radius();
+        f.avoidanceRadius = flock->avoidance_radius();
+
+        f.maxSpeed = flock->max_speed();
+        f.maxForce = flock->max_force();
+
+        f.weightCohesion = flock->weight_cohesion();
+        f.weightAlignment = flock->weight_alignment();
+        f.weightSeparation = flock->weight_separation();
+        f.weightAvoidance = flock->weight_avoidance();
+
+        if (f.boidCount == 0) f.boidCount = 1;
+        if (f.neighborRadius <= 0.0f) f.neighborRadius = 0.1f;
+        if (f.separationRadius <= 0.0f) f.separationRadius = 0.1f;
+        if (f.avoidanceRadius <= 0.0f) f.avoidanceRadius = 0.1f;
+        if (f.maxSpeed <= 0.0f) f.maxSpeed = 0.1f;
+        if (f.maxForce <= 0.0f) f.maxForce = 0.1f;
+    }
+
     // Cameras
     if (const auto* cams = fbsScene->cameras())
     {

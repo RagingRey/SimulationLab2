@@ -2,6 +2,7 @@
 
 ## Project Guidelines
 - User expects lab question numbering/content to strictly match screenshot prompts.
+- Follow the user's provided lab description strictly for feature scope, especially advanced features and concurrency requirements; avoid proposing out-of-scope options.
 
 ## Final Lab Working Rules
 - Always assume requests apply to this codebase (`SimulationLab2`) unless explicitly stated otherwise.

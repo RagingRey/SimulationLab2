@@ -183,6 +183,27 @@ namespace SimRuntime
         uint32_t maxCount = 1;
     };
 
+    struct FlockingSettingsDef
+    {
+        bool enabled = false;
+
+        uint32_t boidCount = 80;
+        glm::vec3 spawnCenter{ 0.0f, 2.0f, 0.0f };
+        glm::vec3 spawnExtents{ 8.0f, 3.0f, 8.0f };
+
+        float neighborRadius = 3.0f;
+        float separationRadius = 1.2f;
+        float avoidanceRadius = 1.5f;
+
+        float maxSpeed = 6.0f;
+        float maxForce = 10.0f;
+
+        float weightCohesion = 1.0f;
+        float weightAlignment = 1.0f;
+        float weightSeparation = 1.5f;
+        float weightAvoidance = 2.0f;
+    };
+
     struct SpawnLocationDef
     {
         SpawnLocationType type = SpawnLocationType::Fixed;
@@ -219,6 +240,7 @@ namespace SimRuntime
         std::string name = "Unnamed Scene";
         std::string description = "";
         bool gravityOn = true;
+        FlockingSettingsDef flocking{};
 
         std::vector<CameraDef> cameras;
         std::vector<ObjectDef> objects;

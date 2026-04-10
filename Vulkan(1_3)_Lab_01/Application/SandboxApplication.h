@@ -99,6 +99,10 @@ public:
     float GetSimulationTickHz() const { return m_SimulationTickHz.load(); }
     float GetMeasuredSimulationTickHz() const { return m_MeasuredSimulationTickHz.load(); }
 
+    void SetRenderTickHz(float hz) { m_RenderTickHz.store(hz); }
+    float GetRenderTickHz() const { return m_RenderTickHz.load(); }
+    float GetMeasuredRenderTickHz() const { return m_MeasuredRenderTickHz.load(); }
+
     void SetIntegrationMethod(IntegrationMethod method) { m_IntegrationMethod = method; }
     IntegrationMethod GetIntegrationMethod() const { return m_IntegrationMethod; }
 
@@ -132,6 +136,9 @@ public:
     bool HasLoadedFlatBufferScene() const { return m_HasLoadedFlatBufferScene; }
     const SimRuntime::SceneRuntime* GetLoadedScene() const { return m_HasLoadedFlatBufferScene ? &m_LoadedScene : nullptr; }
     const std::vector<std::string>& GetLoadedSceneWarnings() const { return m_LoadedSceneWarnings; }
+
+    int GetLastRenderCpu() const { return m_LastRenderCpu.load(); }
+    int GetLastSimulationCpu() const { return m_LastSimulationCpu.load(); }
 
 private:
     // --- Initialization ---
@@ -265,6 +272,8 @@ private:
     std::atomic<float> m_SimulationSpeed{ 1.0f };
     std::atomic<float> m_SimulationTickHz{ 120.0f };
     std::atomic<float> m_MeasuredSimulationTickHz{ 0.0f };
+    std::atomic<float> m_RenderTickHz{ 60.0f };
+    std::atomic<float> m_MeasuredRenderTickHz{ 0.0f };
     float m_AccumulatedTime = 0.0f;
 
     std::thread m_SimulationThread;
@@ -294,4 +303,8 @@ private:
 
     // Add callback declaration
     static void mouseCallback(GLFWwindow* window, double xpos, double ypos);
+
+    // --- Performance Metrics ---
+    std::atomic<int> m_LastRenderCpu{ -1 };
+    std::atomic<int> m_LastSimulationCpu{ -1 };
 };

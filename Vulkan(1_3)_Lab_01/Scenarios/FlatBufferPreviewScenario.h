@@ -12,6 +12,8 @@
 #include <thread>
 #include <mutex>
 #include <atomic>
+#include <deque>
+#include <random>
 
 class FlatBufferPreviewScenario : public Scenario {
 private:
@@ -48,6 +50,26 @@ private:
         float inverseMass = 0.0f;
         float restitution = 0.45f;
         float boundRadius = 0.5f;
+
+        glm::mat4 initialModel{ 1.0f };
+        SimRuntime::Transform initialBaseTransform{};
+        glm::vec3 initialLinearVelocity{ 0.0f };
+
+        // remote replication smoothing
+        bool hasReplicatedState = false;
+        glm::vec3 replicatedTargetPos{ 0.0f };
+        glm::vec3 replicatedTargetVel{ 0.0f };
+
+        bool spawnedBySpawner = false;
+    };
+
+    struct SpawnerRuntime {
+        SimRuntime::SpawnerDef def{};
+        bool singleBurstDone = false;
+        float elapsed = 0.0f;
+        float repeatAccumulator = 0.0f;
+        uint32_t spawnedCount = 0;
+        uint32_t sequentialCursor = 0; // for SEQUENTIAL ownership rotation
     };
 
     std::vector<RenderItem> m_Items;
@@ -74,6 +96,27 @@ private:
     std::atomic<float> m_NetworkMeasuredHz{ 0.0f };
     std::mutex m_ItemsMutex;
 
+    float m_RemoteInterpRate = 12.0f;      // higher = tighter follow
+    float m_RemoteSnapDistance = 1.0f;     // snap if too far away
+
+    std::atomic<bool> m_EnableNetEmulation{ false };
+    std::atomic<float> m_EmuBaseLatencyMs{ 100.0f };
+    std::atomic<float> m_EmuJitterMs{ 50.0f };
+    std::atomic<float> m_EmuLossPercent{ 20.0f };
+
+    struct DelayedStatePacket {
+        SimStatePacket packet{};
+        float remainingDelaySec = 0.0f;
+    };
+
+    std::deque<DelayedStatePacket> m_DelayedIncomingStates;
+    std::mt19937 m_NetRng{ std::random_device{}() };
+
+    std::vector<SpawnerRuntime> m_RuntimeSpawners;
+    std::mt19937 m_SpawnRng{ 1337u };
+    bool m_EnableRuntimeSpawners = true;
+    uint32_t m_TotalSpawnedBySpawners = 0;
+
     void Clear();
     void BuildFromLoadedScene();
     void BuildFallbackScene();
@@ -86,7 +129,7 @@ private:
     RenderItem* FindItemById(uint32_t id);
 
     void SendOwnedSimulatedStates();
-    void ReceiveRemoteSimulatedStates();
+    void ReceiveRemoteSimulatedStates(float dt);
 
     void SendGlobalCommand(NetCommandType command, float value = 0.0f);
     void ReceiveAndApplyRemoteCommands();
@@ -94,6 +137,19 @@ private:
     void StartNetworkWorker();
     void StopNetworkWorker();
     void NetworkWorkerMain();
+
+    void ResetRuntimeState();
+
+    void InitRuntimeSpawnersFromScene();
+    void ResetRuntimeSpawners();
+    void UpdateRuntimeSpawners(float dt);
+    SimRuntime::OwnerType ResolveSpawnerOwner(SpawnerRuntime& s);
+    glm::vec3 RandomVec3InRange(const SimRuntime::Vec3RangeDef& r);
+    SimRuntime::Transform BuildSpawnTransform(const SimRuntime::SpawnLocationDef& loc);
+
+    bool IsSpawnerAuthority(const SpawnerRuntime& s) const;
+    void SendSpawnPacketForItem(const RenderItem& item, SimRuntime::SpawnerShapeType shape, float radius, float height, const glm::vec3& size);
+    void ReceiveRemoteSpawnPackets();
 
 public:
     explicit FlatBufferPreviewScenario(SandboxApplication* app) : Scenario(app) {}

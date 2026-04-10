@@ -17,6 +17,27 @@
 #include <algorithm>
 #include <cmath>
 #include <chrono>
+
+#ifdef _WIN32
+namespace
+{
+    DWORD_PTR GetNetworkingAffinityMask()
+    {
+        // Core 2-3 => CPU bits 1 and 2
+        const DWORD count = GetActiveProcessorCount(ALL_PROCESSOR_GROUPS);
+        if (count == 0) return 0;
+
+        DWORD_PTR mask = 0;
+        if (count > 1) mask |= (static_cast<DWORD_PTR>(1) << 1);
+        if (count > 2) mask |= (static_cast<DWORD_PTR>(1) << 2);
+
+        // fallback
+        if (mask == 0) mask = (static_cast<DWORD_PTR>(1) << 0);
+        return mask;
+    }
+}
+#endif
+
 namespace
 {
     glm::vec3 ColorForIndex(size_t i)
@@ -82,6 +103,343 @@ Mesh FlatBufferPreviewScenario::BuildCuboidMesh(const glm::vec3& size, const glm
     }
 
     return mesh;
+}
+
+glm::vec3 FlatBufferPreviewScenario::RandomVec3InRange(const SimRuntime::Vec3RangeDef& r)
+{
+    std::uniform_real_distribution<float> dx(std::min(r.min.x, r.max.x), std::max(r.min.x, r.max.x));
+    std::uniform_real_distribution<float> dy(std::min(r.min.y, r.max.y), std::max(r.min.y, r.max.y));
+    std::uniform_real_distribution<float> dz(std::min(r.min.z, r.max.z), std::max(r.min.z, r.max.z));
+    return { dx(m_SpawnRng), dy(m_SpawnRng), dz(m_SpawnRng) };
+}
+
+SimRuntime::Transform FlatBufferPreviewScenario::BuildSpawnTransform(const SimRuntime::SpawnLocationDef& loc)
+{
+    SimRuntime::Transform t{};
+    switch (loc.type) {
+    case SimRuntime::SpawnLocationType::Fixed:
+        return loc.fixedTransform;
+
+    case SimRuntime::SpawnLocationType::RandomBox:
+    {
+        std::uniform_real_distribution<float> dx(std::min(loc.randomBoxMin.x, loc.randomBoxMax.x), std::max(loc.randomBoxMin.x, loc.randomBoxMax.x));
+        std::uniform_real_distribution<float> dy(std::min(loc.randomBoxMin.y, loc.randomBoxMax.y), std::max(loc.randomBoxMin.y, loc.randomBoxMax.y));
+        std::uniform_real_distribution<float> dz(std::min(loc.randomBoxMin.z, loc.randomBoxMax.z), std::max(loc.randomBoxMin.z, loc.randomBoxMax.z));
+        t.position = { dx(m_SpawnRng), dy(m_SpawnRng), dz(m_SpawnRng) };
+        t.scale = { 1.0f, 1.0f, 1.0f };
+        return t;
+    }
+
+    case SimRuntime::SpawnLocationType::RandomSphere:
+    {
+        std::uniform_real_distribution<float> du(-1.0f, 1.0f);
+        std::uniform_real_distribution<float> dr(0.0f, 1.0f);
+
+        glm::vec3 d;
+        do {
+            d = { du(m_SpawnRng), du(m_SpawnRng), du(m_SpawnRng) };
+        } while (glm::length2(d) < 0.0001f);
+
+        d = glm::normalize(d);
+        const float r = std::cbrt(dr(m_SpawnRng)) * std::max(0.0f, loc.randomSphereRadius);
+
+        t.position = loc.randomSphereCenter + d * r;
+        t.scale = { 1.0f, 1.0f, 1.0f };
+        return t;
+    }
+
+    default:
+        t.scale = { 1.0f, 1.0f, 1.0f };
+        return t;
+    }
+}
+
+SimRuntime::OwnerType FlatBufferPreviewScenario::ResolveSpawnerOwner(SpawnerRuntime& s)
+{
+    using SO = SimRuntime::SpawnerOwnerType;
+    switch (s.def.base.owner) {
+    case SO::One: return SimRuntime::OwnerType::One;
+    case SO::Two: return SimRuntime::OwnerType::Two;
+    case SO::Three: return SimRuntime::OwnerType::Three;
+    case SO::Four: return SimRuntime::OwnerType::Four;
+    case SO::Sequential:
+    default:
+    {
+        const SimRuntime::OwnerType owners[] = {
+            SimRuntime::OwnerType::One,
+            SimRuntime::OwnerType::Two,
+            SimRuntime::OwnerType::Three,
+            SimRuntime::OwnerType::Four
+        };
+        SimRuntime::OwnerType o = owners[s.sequentialCursor % 4];
+        s.sequentialCursor = (s.sequentialCursor + 1) % 4;
+        return o;
+    }
+    }
+}
+
+bool FlatBufferPreviewScenario::IsSpawnerAuthority(const SpawnerRuntime& s) const
+{
+    using SO = SimRuntime::SpawnerOwnerType;
+    switch (s.def.base.owner) {
+    case SO::One:   return m_LocalPeerOwner == SimRuntime::OwnerType::One;
+    case SO::Two:   return m_LocalPeerOwner == SimRuntime::OwnerType::Two;
+    case SO::Three: return m_LocalPeerOwner == SimRuntime::OwnerType::Three;
+    case SO::Four:  return m_LocalPeerOwner == SimRuntime::OwnerType::Four;
+    case SO::Sequential:
+    default:
+        // single deterministic authority for SEQUENTIAL assignment
+        return m_LocalPeerOwner == SimRuntime::OwnerType::One;
+    }
+}
+
+void FlatBufferPreviewScenario::SendSpawnPacketForItem(const RenderItem& item, SimRuntime::SpawnerShapeType shape, float radius, float height, const glm::vec3& size)
+{
+    if (!m_NetworkingActive) return;
+
+    SimSpawnPacket p{};
+    p.objectId = item.objectId;
+    p.owner = static_cast<uint8_t>(item.owner);
+    p.shape = static_cast<uint8_t>(shape);
+    strncpy_s(p.material, item.material.c_str(), _TRUNCATE);
+
+    p.pos[0] = item.baseTransform.position.x;
+    p.pos[1] = item.baseTransform.position.y;
+    p.pos[2] = item.baseTransform.position.z;
+
+    p.vel[0] = item.linearVelocity.x;
+    p.vel[1] = item.linearVelocity.y;
+    p.vel[2] = item.linearVelocity.z;
+
+    p.size[0] = size.x;
+    p.size[1] = size.y;
+    p.size[2] = size.z;
+    p.radius = radius;
+    p.height = height;
+    p.tick = m_NetTick;
+
+    m_Network.SendSpawn(p);
+}
+
+void FlatBufferPreviewScenario::ReceiveRemoteSpawnPackets()
+{
+    if (!m_NetworkingActive) return;
+
+    const auto packets = m_Network.ReceiveSpawns();
+    for (const auto& p : packets) {
+        if (FindItemById(p.objectId)) continue;
+
+        RenderItem item{};
+        item.objectId = p.objectId;
+        item.name = "spawn_remote_" + std::to_string(p.objectId);
+        item.material = p.material;
+        item.behaviourType = SimRuntime::BehaviourType::Simulated;
+        item.owner = static_cast<SimRuntime::OwnerType>(p.owner);
+        item.isSimulated = true;
+        item.isLocallyOwned = (item.owner == m_LocalPeerOwner);
+        item.spawnedBySpawner = true;
+        item.inverseMass = 1.0f;
+        item.restitution = 0.45f;
+
+        item.baseTransform.position = { p.pos[0], p.pos[1], p.pos[2] };
+        item.baseTransform.scale = { 1.0f, 1.0f, 1.0f };
+        item.linearVelocity = { p.vel[0], p.vel[1], p.vel[2] };
+
+        const glm::vec3 col = ColorForIndex(p.objectId);
+        const auto shape = static_cast<SimRuntime::SpawnerShapeType>(p.shape);
+
+        switch (shape) {
+        case SimRuntime::SpawnerShapeType::Sphere:
+            item.boundRadius = std::max(0.05f, p.radius);
+            item.mesh = MeshGenerator::GenerateSphere(item.boundRadius, 16, 12, col);
+            break;
+        case SimRuntime::SpawnerShapeType::Cylinder:
+            item.boundRadius = std::max(std::max(0.05f, p.radius), std::max(0.10f, p.height) * 0.5f);
+            item.mesh = MeshGenerator::GenerateCylinder(std::max(0.05f, p.radius), std::max(0.10f, p.height), 16, col);
+            break;
+        case SimRuntime::SpawnerShapeType::Capsule:
+            item.boundRadius = std::max(0.05f, p.radius) + std::max(0.10f, p.height) * 0.5f;
+            item.mesh = MeshGenerator::GenerateCapsule(std::max(0.05f, p.radius), std::max(0.10f, p.height), 16, 10, col);
+            break;
+        case SimRuntime::SpawnerShapeType::Cuboid:
+        default:
+        {
+            glm::vec3 size = glm::max(glm::vec3(0.05f), glm::vec3(p.size[0], p.size[1], p.size[2]));
+            item.boundRadius = glm::length(size * 0.5f);
+            item.mesh = BuildCuboidMesh(size, col);
+            break;
+        }
+        }
+
+        item.model = BuildModelMatrix(item.baseTransform);
+        item.initialModel = item.model;
+        item.initialBaseTransform = item.baseTransform;
+        item.initialLinearVelocity = item.linearVelocity;
+        item.buffers = m_App->UploadMesh(item.mesh);
+
+        m_NextObjectId = std::max(m_NextObjectId, p.objectId + 1);
+        m_Items.push_back(std::move(item));
+    }
+
+    RefreshOwnershipFlagsAndStats();
+}
+
+void FlatBufferPreviewScenario::InitRuntimeSpawnersFromScene()
+{
+    m_RuntimeSpawners.clear();
+    m_TotalSpawnedBySpawners = 0;
+    m_SpawnRng.seed(1337u);
+
+    const auto* scene = m_App->GetLoadedScene();
+    if (!scene) return;
+
+    for (const auto& s : scene->spawners) {
+        SpawnerRuntime rs{};
+        rs.def = s;
+        m_RuntimeSpawners.push_back(std::move(rs));
+    }
+}
+
+void FlatBufferPreviewScenario::ResetRuntimeSpawners()
+{
+    m_TotalSpawnedBySpawners = 0;
+    m_SpawnRng.seed(1337u);
+
+    for (auto& s : m_RuntimeSpawners) {
+        s.singleBurstDone = false;
+        s.elapsed = 0.0f;
+        s.repeatAccumulator = 0.0f;
+        s.spawnedCount = 0;
+        s.sequentialCursor = 0;
+    }
+}
+
+void FlatBufferPreviewScenario::UpdateRuntimeSpawners(float dt)
+{
+    if (!m_EnableRuntimeSpawners) return;
+
+    for (auto& s : m_RuntimeSpawners) {
+        s.elapsed += dt;
+        if (s.elapsed < s.def.base.startTime) continue;
+
+        // authority gate (only owner peer is allowed to spawn)
+        if (!IsSpawnerAuthority(s)) continue;
+
+        auto spawnOne = [&]() {
+            RenderItem item{};
+            float shapeRadius = 0.0f;
+            float shapeHeight = 0.0f;
+            glm::vec3 shapeSize(0.0f);
+            item.objectId = m_NextObjectId++;
+            item.name = s.def.base.name + "_spawn_" + std::to_string(item.objectId);
+            item.material = s.def.base.material;
+            item.behaviourType = SimRuntime::BehaviourType::Simulated;
+            item.owner = ResolveSpawnerOwner(s);
+            item.isSimulated = true;
+            item.isLocallyOwned = (item.owner == m_LocalPeerOwner);
+            item.spawnedBySpawner = true;
+
+            item.baseTransform = BuildSpawnTransform(s.def.base.location);
+            item.linearVelocity = RandomVec3InRange(s.def.base.linearVelocity);
+            item.restitution = 0.45f;
+            item.inverseMass = 1.0f;
+
+            const glm::vec3 col = ColorForIndex(item.objectId);
+
+            switch (s.def.shape) {
+            case SimRuntime::SpawnerShapeType::Sphere:
+            {
+                std::uniform_real_distribution<float> rr(
+                    std::min(s.def.radiusRange.min, s.def.radiusRange.max),
+                    std::max(s.def.radiusRange.min, s.def.radiusRange.max));
+                float r = std::max(0.05f, rr(m_SpawnRng));
+                item.boundRadius = r;
+                item.mesh = MeshGenerator::GenerateSphere(r, 16, 12, col);
+                shapeRadius = r;
+                break;
+            }
+            case SimRuntime::SpawnerShapeType::Cylinder:
+            {
+                std::uniform_real_distribution<float> rr(
+                    std::min(s.def.radiusRange.min, s.def.radiusRange.max),
+                    std::max(s.def.radiusRange.min, s.def.radiusRange.max));
+                std::uniform_real_distribution<float> hh(
+                    std::min(s.def.heightRange.min, s.def.heightRange.max),
+                    std::max(s.def.heightRange.min, s.def.heightRange.max));
+                float r = std::max(0.05f, rr(m_SpawnRng));
+                float h = std::max(0.10f, hh(m_SpawnRng));
+                item.boundRadius = std::max(r, h * 0.5f);
+                item.mesh = MeshGenerator::GenerateCylinder(r, h, 16, col);
+                shapeRadius = r;
+                shapeHeight = h;
+                break;
+            }
+            case SimRuntime::SpawnerShapeType::Capsule:
+            {
+                std::uniform_real_distribution<float> rr(
+                    std::min(s.def.radiusRange.min, s.def.radiusRange.max),
+                    std::max(s.def.radiusRange.min, s.def.radiusRange.max));
+                std::uniform_real_distribution<float> hh(
+                    std::min(s.def.heightRange.min, s.def.heightRange.max),
+                    std::max(s.def.heightRange.min, s.def.heightRange.max));
+                float r = std::max(0.05f, rr(m_SpawnRng));
+                float h = std::max(0.10f, hh(m_SpawnRng));
+                item.boundRadius = r + h * 0.5f;
+                item.mesh = MeshGenerator::GenerateCapsule(r, h, 16, 10, col);
+                shapeRadius = r;
+                shapeHeight = h;
+                break;
+            }
+            case SimRuntime::SpawnerShapeType::Cuboid:
+            default:
+            {
+                glm::vec3 mn = glm::min(s.def.sizeRange.min, s.def.sizeRange.max);
+                glm::vec3 mx = glm::max(s.def.sizeRange.min, s.def.sizeRange.max);
+                std::uniform_real_distribution<float> sx(mn.x, mx.x);
+                std::uniform_real_distribution<float> sy(mn.y, mx.y);
+                std::uniform_real_distribution<float> sz(mn.z, mx.z);
+                glm::vec3 size = glm::max(glm::vec3(0.05f), glm::vec3(sx(m_SpawnRng), sy(m_SpawnRng), sz(m_SpawnRng)));
+                item.boundRadius = glm::length(size * 0.5f);
+                item.mesh = BuildCuboidMesh(size, col);
+                shapeSize = size;
+                break;
+            }
+            }
+
+            item.model = BuildModelMatrix(item.baseTransform);
+            item.initialModel = item.model;
+            item.initialBaseTransform = item.baseTransform;
+            item.initialLinearVelocity = item.linearVelocity;
+            item.buffers = m_App->UploadMesh(item.mesh);
+
+            m_Items.push_back(std::move(item));
+            ++s.spawnedCount;
+            ++m_TotalSpawnedBySpawners;
+
+            // send spawn event (authoritative creation distribution)
+            SendSpawnPacketForItem(m_Items.back(), s.def.shape, shapeRadius, shapeHeight, shapeSize);
+            };
+
+        if (s.def.base.spawnType.mode == SimRuntime::SpawnMode::SingleBurst) {
+            if (!s.singleBurstDone) {
+                const uint32_t n = std::max(1u, s.def.base.spawnType.count);
+                for (uint32_t i = 0; i < n; ++i) spawnOne();
+                s.singleBurstDone = true;
+            }
+        }
+        else {
+            const float interval = std::max(0.001f, s.def.base.spawnType.interval);
+            const uint32_t maxCount = std::max(1u, s.def.base.spawnType.maxCount);
+
+            s.repeatAccumulator += dt;
+            while (s.repeatAccumulator >= interval && s.spawnedCount < maxCount) {
+                s.repeatAccumulator -= interval;
+                spawnOne();
+            }
+        }
+    }
+
+    RefreshOwnershipFlagsAndStats();
 }
 
 void FlatBufferPreviewScenario::BuildFromLoadedScene() {
@@ -161,6 +519,9 @@ void FlatBufferPreviewScenario::BuildFromLoadedScene() {
         }
 
         item.buffers = m_App->UploadMesh(item.mesh);
+        item.initialModel = item.model;
+        item.initialBaseTransform = item.baseTransform;
+        item.initialLinearVelocity = item.linearVelocity;
         m_Items.push_back(std::move(item));
     }
 }
@@ -187,6 +548,9 @@ void FlatBufferPreviewScenario::BuildFallbackScene() {
         s.model = glm::translate(glm::mat4(1.0f), glm::vec3(-1.5f, 1.0f, 0.0f));
         s.mesh = MeshGenerator::GenerateSphere(0.8f, 24, 16, { 1.0f, 0.35f, 0.35f });
         s.buffers = m_App->UploadMesh(s.mesh);
+        s.initialModel = s.model;
+        s.initialBaseTransform = s.baseTransform;
+        s.initialLinearVelocity = s.linearVelocity;
         m_Items.push_back(std::move(s));
     }
 
@@ -214,7 +578,38 @@ void FlatBufferPreviewScenario::BuildFallbackScene() {
         b.mesh = BuildCuboidMesh(cuboidSize, { 0.3f, 0.8f, 1.0f });
         b.buffers = m_App->UploadMesh(b.mesh);
 
+        b.initialModel = b.model;
+        b.initialBaseTransform = b.baseTransform;
+        b.initialLinearVelocity = b.linearVelocity;
+
         m_Items.push_back(std::move(b));
+    }
+
+    {
+        RenderItem bs{};
+        bs.objectId = m_NextObjectId++;
+        bs.name = "fallback bouncer sphere";
+        bs.material = "default";
+        bs.behaviourType = SimRuntime::BehaviourType::Simulated;
+        bs.owner = SimRuntime::OwnerType::Two;
+        bs.isSimulated = true;
+        bs.inverseMass = 1.0f;
+        bs.restitution = 1.0f;
+        bs.boundRadius = 0.6f;
+
+        bs.baseTransform = {};
+        bs.baseTransform.position = glm::vec3(-2.8f, 3.5f, 0.0f);
+        bs.linearVelocity = glm::vec3(0.0f, 0.0f, 0.0f);
+        bs.model = BuildModelMatrix(bs.baseTransform);
+
+        bs.mesh = MeshGenerator::GenerateSphere(0.6f, 24, 16, { 1.0f, 0.9f, 0.2f });
+        bs.buffers = m_App->UploadMesh(bs.mesh);
+
+        bs.initialModel = bs.model;
+        bs.initialBaseTransform = bs.baseTransform;
+        bs.initialLinearVelocity = bs.linearVelocity;
+
+        m_Items.push_back(std::move(bs));
     }
 
     {
@@ -226,6 +621,9 @@ void FlatBufferPreviewScenario::BuildFallbackScene() {
         p.model = glm::mat4(1.0f);
         p.mesh = MeshGenerator::GeneratePlane(12.0f, 12.0f, 12, 12, { 0.45f, 0.45f, 0.45f });
         p.buffers = m_App->UploadMesh(p.mesh);
+        p.initialModel = p.model;
+        p.initialBaseTransform = p.baseTransform;
+        p.initialLinearVelocity = p.linearVelocity;
         m_Items.push_back(std::move(p));
     }
 }
@@ -236,6 +634,7 @@ void FlatBufferPreviewScenario::OnLoad() {
     m_NextObjectId = 1;
     m_NetTick = 0;
     BuildFromLoadedScene();
+    InitRuntimeSpawnersFromScene();
     RefreshOwnershipFlagsAndStats();
     StartNetworkWorker();
 }
@@ -293,6 +692,8 @@ void FlatBufferPreviewScenario::OnUpdate(float deltaTime) {
         };
 
     std::lock_guard<std::mutex> lock(m_ItemsMutex);
+
+    UpdateRuntimeSpawners(deltaTime);
 
     for (auto& item : m_Items) {
         if (item.behaviourType != SimRuntime::BehaviourType::Animated || item.waypoints.size() < 2) {
@@ -360,6 +761,28 @@ void FlatBufferPreviewScenario::OnUpdate(float deltaTime) {
         default:
             break;
         }
+    }
+
+    // Remote object drift correction / interpolation
+    for (auto& item : m_Items) {
+        if (!item.isSimulated || item.isLocallyOwned || !item.hasReplicatedState) {
+            continue;
+        }
+
+        const glm::vec3 toTarget = item.replicatedTargetPos - item.baseTransform.position;
+        const float dist = glm::length(toTarget);
+
+        if (dist > m_RemoteSnapDistance) {
+            item.baseTransform.position = item.replicatedTargetPos;
+            item.linearVelocity = item.replicatedTargetVel;
+        }
+        else {
+            const float alpha = 1.0f - std::exp(-m_RemoteInterpRate * deltaTime);
+            item.baseTransform.position = glm::mix(item.baseTransform.position, item.replicatedTargetPos, alpha);
+            item.linearVelocity = glm::mix(item.linearVelocity, item.replicatedTargetVel, alpha);
+        }
+
+        item.model = BuildModelMatrix(item.baseTransform);
     }
 
     const float gravity = -9.81f;
@@ -479,6 +902,12 @@ void FlatBufferPreviewScenario::OnImGui() {
         ImGui::TreePop();
     }
 
+    ImGui::Separator();
+    ImGui::Text("Spawner Runtime");
+    ImGui::Checkbox("Enable Runtime Spawners", &m_EnableRuntimeSpawners);
+    ImGui::Text("Loaded Spawners: %d", static_cast<int>(m_RuntimeSpawners.size()));
+    ImGui::Text("Spawned Objects Total: %u", m_TotalSpawnedBySpawners);
+
     const char* peerNames[] = { "ONE", "TWO", "THREE", "FOUR" };
     int localPeer = static_cast<int>(m_LocalPeerOwner);
     if (ImGui::Combo("Local Peer (Ownership View)", &localPeer, peerNames, IM_ARRAYSIZE(peerNames))) {
@@ -515,6 +944,30 @@ void FlatBufferPreviewScenario::OnImGui() {
     ImGui::Text("Measured Network Hz: %.1f", m_NetworkMeasuredHz.load());
 
     ImGui::Separator();
+    ImGui::Text("Robustness - Remote Smoothing");
+    ImGui::SliderFloat("Remote Interp Rate", &m_RemoteInterpRate, 1.0f, 40.0f, "%.1f");
+    ImGui::SliderFloat("Remote Snap Distance", &m_RemoteSnapDistance, 0.05f, 5.0f, "%.2f");
+    bool emulate = m_EnableNetEmulation.load();
+    if (ImGui::Checkbox("Enable Delay/Loss Emulation", &emulate)) {
+        m_EnableNetEmulation.store(emulate);
+    }
+
+    float baseMs = m_EmuBaseLatencyMs.load();
+    if (ImGui::SliderFloat("Emu Base Latency (ms)", &baseMs, 0.0f, 300.0f, "%.0f")) {
+        m_EmuBaseLatencyMs.store(baseMs);
+    }
+
+    float jitterMs = m_EmuJitterMs.load();
+    if (ImGui::SliderFloat("Emu Jitter (ms)", &jitterMs, 0.0f, 200.0f, "%.0f")) {
+        m_EmuJitterMs.store(jitterMs);
+    }
+
+    float lossPct = m_EmuLossPercent.load();
+    if (ImGui::SliderFloat("Emu Loss (%)", &lossPct, 0.0f, 50.0f, "%.0f")) {
+        m_EmuLossPercent.store(lossPct);
+    }
+
+    ImGui::Separator();
     ImGui::Text("Global Command Replication");
 
     if (ImGui::Button("Global Play")) {
@@ -529,7 +982,7 @@ void FlatBufferPreviewScenario::OnImGui() {
     ImGui::SameLine();
     if (ImGui::Button("Global Reset")) {
         SendGlobalCommand(NetCommandType::Reset);
-        m_App->Stop();
+        ResetRuntimeState();
     }
 
     float ts = m_App->GetTimeStep();
@@ -628,20 +1081,58 @@ void FlatBufferPreviewScenario::SendOwnedSimulatedStates()
     ++m_NetTick;
 }
 
-void FlatBufferPreviewScenario::ReceiveRemoteSimulatedStates()
+void FlatBufferPreviewScenario::ReceiveRemoteSimulatedStates(float dt)
 {
     if (!m_NetworkingActive) return;
 
+    auto applyPacket = [this](const SimStatePacket& p) {
+        RenderItem* item = FindItemById(p.objectId);
+        if (!item) return;
+        if (!item->isSimulated) return;
+        if (item->isLocallyOwned) return;
+
+        item->replicatedTargetPos = { p.pos[0], p.pos[1], p.pos[2] };
+        item->replicatedTargetVel = { p.vel[0], p.vel[1], p.vel[2] };
+        item->hasReplicatedState = true;
+        };
+
+    const bool emulate = m_EnableNetEmulation.load();
+    const float baseMs = m_EmuBaseLatencyMs.load();
+    const float jitterMs = m_EmuJitterMs.load();
+    const float lossPct = m_EmuLossPercent.load();
+
+    std::uniform_real_distribution<float> lossDist(0.0f, 100.0f);
+    std::uniform_real_distribution<float> jitterDist(-jitterMs, jitterMs);
+
     const auto packets = m_Network.ReceiveStates();
     for (const auto& p : packets) {
-        RenderItem* item = FindItemById(p.objectId);
-        if (!item) continue;
-        if (!item->isSimulated) continue;
-        if (item->isLocallyOwned) continue; // local authority wins
+        if (emulate) {
+            if (lossDist(m_NetRng) < lossPct) {
+                continue; // dropped
+            }
 
-        item->baseTransform.position = { p.pos[0], p.pos[1], p.pos[2] };
-        item->linearVelocity = { p.vel[0], p.vel[1], p.vel[2] };
-        item->model = BuildModelMatrix(item->baseTransform);
+            const float delayedMs = std::max(0.0f, baseMs + jitterDist(m_NetRng));
+            DelayedStatePacket delayed{};
+            delayed.packet = p;
+            delayed.remainingDelaySec = delayedMs * 0.001f;
+            m_DelayedIncomingStates.push_back(delayed);
+        }
+        else {
+            applyPacket(p);
+        }
+    }
+
+    if (emulate) {
+        for (auto it = m_DelayedIncomingStates.begin(); it != m_DelayedIncomingStates.end(); ) {
+            it->remainingDelaySec -= dt;
+            if (it->remainingDelaySec <= 0.0f) {
+                applyPacket(it->packet);
+                it = m_DelayedIncomingStates.erase(it);
+            }
+            else {
+                ++it;
+            }
+        }
     }
 }
 
@@ -670,7 +1161,7 @@ void FlatBufferPreviewScenario::ReceiveAndApplyRemoteCommands()
             m_App->Pause();
             break;
         case NetCommandType::Reset:
-            m_App->Stop();
+            ResetRuntimeState();
             break;
         case NetCommandType::SetTimeStep:
             m_App->SetTimeStep(std::max(0.0005f, c.value));
@@ -690,13 +1181,17 @@ void FlatBufferPreviewScenario::StartNetworkWorker()
         return;
     }
 
+    m_DelayedIncomingStates.clear();
+
     m_NetworkThread = std::thread([this]() { NetworkWorkerMain(); });
 
 #ifdef _WIN32
-    SetThreadAffinityMask(
-        reinterpret_cast<HANDLE>(m_NetworkThread.native_handle()),
-        static_cast<DWORD_PTR>(1ull << 0)
-    );
+    if (const DWORD_PTR netMask = GetNetworkingAffinityMask(); netMask != 0) {
+        SetThreadAffinityMask(
+            reinterpret_cast<HANDLE>(m_NetworkThread.native_handle()),
+            netMask
+        );
+    }
 #endif
 }
 
@@ -726,7 +1221,8 @@ void FlatBufferPreviewScenario::NetworkWorkerMain()
 
         {
             std::lock_guard<std::mutex> lock(m_ItemsMutex);
-            ReceiveRemoteSimulatedStates();
+            ReceiveRemoteSpawnPackets();
+            ReceiveRemoteSimulatedStates(dt);
             SendOwnedSimulatedStates();
         }
 
@@ -736,4 +1232,38 @@ void FlatBufferPreviewScenario::NetworkWorkerMain()
 
         std::this_thread::sleep_for(step);
     }
+}
+
+void FlatBufferPreviewScenario::ResetRuntimeState()
+{
+    std::lock_guard<std::mutex> lock(m_ItemsMutex);
+
+    for (auto& item : m_Items) {
+        item.model = item.initialModel;
+        item.baseTransform = item.initialBaseTransform;
+        item.linearVelocity = item.initialLinearVelocity;
+
+        item.animTime = 0.0f;
+        item.reverse = false;
+
+        item.hasReplicatedState = false;
+        item.replicatedTargetPos = item.baseTransform.position;
+        item.replicatedTargetVel = item.linearVelocity;
+    }
+
+    for (size_t i = 0; i < m_Items.size(); ) {
+        if (m_Items[i].spawnedBySpawner) {
+            m_App->DestroyMeshBuffers(m_Items[i].buffers);
+            m_Items.erase(m_Items.begin() + static_cast<std::ptrdiff_t>(i));
+        }
+        else {
+            ++i;
+        }
+    }
+
+    ResetRuntimeSpawners();
+    RefreshOwnershipFlagsAndStats();
+
+    m_DelayedIncomingStates.clear();
+    m_NetTick = 0;
 }

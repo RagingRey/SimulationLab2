@@ -235,6 +235,29 @@ union SpawnerType {
   CuboidSpawner
 }
 
+//Flocking settings
+
+table FlockingSettings {
+  enabled: bool = false;
+
+  boid_count: uint = 80;
+  spawn_center: Vec3;
+  spawn_extents: Vec3;
+
+  neighbor_radius: float = 3.0;
+  separation_radius: float = 1.2;
+  avoidance_radius: float = 1.5;
+
+  max_speed: float = 6.0;
+  max_force: float = 10.0;
+
+  weight_cohesion: float = 1.0;
+  weight_alignment: float = 1.0;
+  weight_separation: float = 1.5;
+  weight_avoidance: float = 2.0;
+}
+
+
 // =======================
 // Scene
 // =======================
@@ -243,6 +266,7 @@ table Scene {
   name: string;
   description: string;
   gravity_on: bool = true;
+  flocking: FlockingSettings;
   cameras: [Camera];
   objects: [Object];
   spawners: [SpawnerType];
