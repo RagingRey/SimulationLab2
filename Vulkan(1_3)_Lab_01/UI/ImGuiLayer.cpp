@@ -95,19 +95,23 @@ void ImGuiLayer::RenderMainMenuBar(SandboxApplication* app) {
 
     if (ImGui::BeginMenu("Camera")) {
         if (ImGui::MenuItem("Free (Perspective)", nullptr, app->GetCameraView() == CameraView::Perspective)) {
+            app->ClearActiveLoadedCameraSelection();
             app->SetCameraView(CameraView::Perspective);
         }
         if (ImGui::MenuItem("Top", nullptr, app->GetCameraView() == CameraView::Top)) {
+            app->ClearActiveLoadedCameraSelection();
             app->SetCameraView(CameraView::Top);
         }
         if (ImGui::MenuItem("Front", nullptr, app->GetCameraView() == CameraView::Front)) {
+            app->ClearActiveLoadedCameraSelection();
             app->SetCameraView(CameraView::Front);
         }
         if (ImGui::MenuItem("Side", nullptr, app->GetCameraView() == CameraView::Side)) {
+            app->ClearActiveLoadedCameraSelection();
             app->SetCameraView(CameraView::Side);
         }
 
-        ImGui::Separator();
+        /*ImGui::Separator();
         bool ortho = app->IsOrthographic();
         if (ImGui::Checkbox("Orthographic", &ortho)) {
             app->SetOrthographic(ortho);
@@ -115,6 +119,24 @@ void ImGuiLayer::RenderMainMenuBar(SandboxApplication* app) {
         float orthoSize = app->GetOrthoSize();
         if (ImGui::SliderFloat("Ortho Size", &orthoSize, 2.0f, 20.0f)) {
             app->SetOrthoSize(orthoSize);
+        }*/
+
+        const auto& loadedCameras = app->GetLoadedCameraNames();
+        if (!loadedCameras.empty() && ImGui::BeginMenu("Loaded Scene Cameras")) {
+            const bool noneSelected = !app->IsUsingLoadedCamera();
+            if (ImGui::MenuItem("None (Use Local Camera)", nullptr, noneSelected)) {
+                app->ClearActiveLoadedCameraSelection();
+            }
+
+            const int activeLoaded = app->GetActiveLoadedCameraIndex();
+            for (int i = 0; i < static_cast<int>(loadedCameras.size()); ++i) {
+                const bool selected = (activeLoaded == i);
+                if (ImGui::MenuItem(loadedCameras[static_cast<size_t>(i)].c_str(), nullptr, selected)) {
+                    app->SetActiveLoadedCameraIndex(i);
+                }
+            }
+
+            ImGui::EndMenu();
         }
 
         ImGui::EndMenu();

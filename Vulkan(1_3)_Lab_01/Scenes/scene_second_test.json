@@ -1,0 +1,234 @@
+{
+  "name": "Arena Container Scene",
+  "description": "Container visibility + mixed behaviours + multi-camera test scene",
+  "gravity_on": true,
+
+  "flocking": {
+    "enabled": false,
+    "boid_count": 80,
+    "spawn_center": { "x": 0.0, "y": 2.0, "z": 0.0 },
+    "spawn_extents": { "x": 8.0, "y": 3.0, "z": 8.0 }
+  },
+
+  "cameras": [
+    {
+      "name": "MainCam",
+      "transform": {
+        "position": { "x": 0.0, "y": 8.0, "z": 16.0 },
+        "orientation": { "yaw": 0.0, "pitch": -10.0, "roll": 0.0 },
+        "scale": { "x": 1.0, "y": 1.0, "z": 1.0 }
+      },
+      "camera_type_type": "PerspectiveCamera",
+      "camera_type": { "fov": 60.0, "near": 0.1, "far": 250.0 }
+    },
+    {
+      "name": "TopOrtho",
+      "transform": {
+        "position": { "x": 0.0, "y": 18.0, "z": 0.0 },
+        "orientation": { "yaw": 0.0, "pitch": -90.0, "roll": 0.0 },
+        "scale": { "x": 1.0, "y": 1.0, "z": 1.0 }
+      },
+      "camera_type_type": "OrthographicCamera",
+      "camera_type": { "size": 14.0, "near": 0.1, "far": 300.0 }
+    }
+  ],
+
+  "objects": [
+    {
+      "name": "Ground",
+      "transform": {
+        "position": { "x": 0.0, "y": 0.0, "z": 0.0 },
+        "orientation": { "yaw": 0.0, "pitch": 0.0, "roll": 0.0 },
+        "scale": { "x": 1.0, "y": 1.0, "z": 1.0 }
+      },
+      "material": "default",
+      "shape_type": "Plane",
+      "shape": { "normal": { "x": 0.0, "y": 1.0, "z": 0.0 } },
+      "behaviour_type": "StaticObject",
+      "behaviour": {},
+      "collision_type": "SOLID"
+    },
+    {
+      "name": "ArenaContainer",
+      "transform": {
+        "position": { "x": 0.0, "y": 4.0, "z": 0.0 },
+        "orientation": { "yaw": 0.0, "pitch": 0.0, "roll": 0.0 },
+        "scale": { "x": 1.0, "y": 1.0, "z": 1.0 }
+      },
+      "material": "steel",
+      "shape_type": "Cuboid",
+      "shape": { "size": { "x": 12.0, "y": 8.0, "z": 12.0 } },
+      "behaviour_type": "StaticObject",
+      "behaviour": {},
+      "collision_type": "CONTAINER"
+    },
+    {
+      "name": "HeavySphere",
+      "transform": {
+        "position": { "x": -2.0, "y": 6.0, "z": 0.0 },
+        "orientation": { "yaw": 0.0, "pitch": 0.0, "roll": 0.0 },
+        "scale": { "x": 1.0, "y": 1.0, "z": 1.0 }
+      },
+      "material": "steel",
+      "shape_type": "Sphere",
+      "shape": { "radius": 0.65 },
+      "behaviour_type": "SimulatedObject",
+      "behaviour": {
+        "initial_state": {
+          "linear_velocity": { "x": 1.2, "y": 0.0, "z": 0.6 },
+          "angular_velocity": { "x": 0.0, "y": 45.0, "z": 0.0 }
+        },
+        "owner": "ONE"
+      },
+      "collision_type": "SOLID"
+    },
+    {
+      "name": "RubberCapsule",
+      "transform": {
+        "position": { "x": 2.0, "y": 6.5, "z": -1.5 },
+        "orientation": { "yaw": 15.0, "pitch": 0.0, "roll": 0.0 },
+        "scale": { "x": 1.0, "y": 1.0, "z": 1.0 }
+      },
+      "material": "rubber",
+      "shape_type": "Capsule",
+      "shape": { "radius": 0.35, "height": 1.4 },
+      "behaviour_type": "SimulatedObject",
+      "behaviour": {
+        "initial_state": {
+          "linear_velocity": { "x": -0.8, "y": 0.0, "z": 0.2 },
+          "angular_velocity": { "x": 10.0, "y": 0.0, "z": 20.0 }
+        },
+        "owner": "TWO"
+      },
+      "collision_type": "SOLID"
+    },
+    {
+      "name": "AnimatedKinematicBall",
+      "transform": {
+        "position": { "x": 0.0, "y": 3.0, "z": 0.0 },
+        "orientation": { "yaw": 0.0, "pitch": 0.0, "roll": 0.0 },
+        "scale": { "x": 1.0, "y": 1.0, "z": 1.0 }
+      },
+      "material": "default",
+      "shape_type": "Sphere",
+      "shape": { "radius": 0.5 },
+      "behaviour_type": "AnimatedObject",
+      "behaviour": {
+        "waypoints": [
+          {
+            "position": { "x": -3.5, "y": 3.0, "z": -3.0 },
+            "rotation": { "yaw": 0.0, "pitch": 0.0, "roll": 0.0 },
+            "time": 0.0
+          },
+          {
+            "position": { "x": 3.5, "y": 4.5, "z": 0.0 },
+            "rotation": { "yaw": 90.0, "pitch": 0.0, "roll": 0.0 },
+            "time": 1.8
+          },
+          {
+            "position": { "x": -3.5, "y": 3.0, "z": 3.0 },
+            "rotation": { "yaw": 180.0, "pitch": 0.0, "roll": 0.0 },
+            "time": 3.6
+          }
+        ],
+        "total_duration": 4.5,
+        "easing": "SMOOTHSTEP",
+        "path_mode": "LOOP"
+      },
+      "collision_type": "SOLID"
+    }
+  ],
+
+  "spawners_type": [
+    "CylinderSpawner",
+    "CapsuleSpawner"
+  ],
+  "spawners": [
+    {
+      "base": {
+        "name": "SeqCylSpawner",
+        "start_time": 1.0,
+        "spawn_type_type": "RepeatingSpawn",
+        "spawn_type": { "interval": 0.35, "max_count": 18 },
+        "location_type": "RandomBox",
+        "location": {
+          "min": { "x": -4.0, "y": 5.0, "z": -4.0 },
+          "max": { "x": 4.0, "y": 7.0, "z": 4.0 }
+        },
+        "linear_velocity": {
+          "min": { "x": -0.6, "y": -0.2, "z": -0.6 },
+          "max": { "x": 0.6, "y": 0.9, "z": 0.6 }
+        },
+        "angular_velocity": {
+          "min": { "x": 0.0, "y": 0.0, "z": 0.0 },
+          "max": { "x": 0.0, "y": 0.0, "z": 0.0 }
+        },
+        "material": "default",
+        "owner": "SEQUENTIAL"
+      },
+      "radius_range": { "min": 0.2, "max": 0.35 },
+      "height_range": { "min": 0.6, "max": 1.0 }
+    },
+    {
+      "base": {
+        "name": "BurstCapsulesOwnerThree",
+        "start_time": 0.8,
+        "spawn_type_type": "SingleBurstSpawn",
+        "spawn_type": { "count": 8 },
+        "location_type": "RandomSphere",
+        "location": {
+          "center": { "x": 0.0, "y": 6.0, "z": 0.0 },
+          "radius": 2.2
+        },
+        "linear_velocity": {
+          "min": { "x": -0.4, "y": -0.3, "z": -0.4 },
+          "max": { "x": 0.4, "y": 0.5, "z": 0.4 }
+        },
+        "angular_velocity": {
+          "min": { "x": 0.0, "y": 0.0, "z": 0.0 },
+          "max": { "x": 0.0, "y": 0.0, "z": 0.0 }
+        },
+        "material": "rubber",
+        "owner": "THREE"
+      },
+      "radius_range": { "min": 0.2, "max": 0.3 },
+      "height_range": { "min": 0.8, "max": 1.4 }
+    }
+  ],
+
+  "materials": [
+    { "name": "default", "density": 1000.0 },
+    { "name": "steel", "density": 7800.0 },
+    { "name": "rubber", "density": 1100.0 }
+  ],
+  "interactions": [
+    {
+      "material_a": "default",
+      "material_b": "default",
+      "restitution": 0.45,
+      "static_friction": 0.60,
+      "dynamic_friction": 0.50
+    },
+    {
+      "material_a": "steel",
+      "material_b": "default",
+      "restitution": 0.20,
+      "static_friction": 0.65,
+      "dynamic_friction": 0.50
+    },
+    {
+      "material_a": "rubber",
+      "material_b": "default",
+      "restitution": 0.85,
+      "static_friction": 0.90,
+      "dynamic_friction": 0.70
+    },
+    {
+      "material_a": "steel",
+      "material_b": "rubber",
+      "restitution": 0.55,
+      "static_friction": 0.80,
+      "dynamic_friction": 0.65
+    }
+  ]
+}

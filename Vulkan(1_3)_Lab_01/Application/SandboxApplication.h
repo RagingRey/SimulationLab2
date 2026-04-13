@@ -131,11 +131,23 @@ public:
     void DestroyMeshBuffers(const MeshBuffers& buffers);
     VkPipelineLayout GetPipelineLayout() const { return m_PipelineLayout; }
 
+    void BindDefaultPipeline(VkCommandBuffer commandBuffer) const;
+    void BindNoCullPipeline(VkCommandBuffer commandBuffer) const;
+
     void ProcessInput(float deltaTime);
 
-    bool HasLoadedFlatBufferScene() const { return m_HasLoadedFlatBufferScene; }
-    const SimRuntime::SceneRuntime* GetLoadedScene() const { return m_HasLoadedFlatBufferScene ? &m_LoadedScene : nullptr; }
-    const std::vector<std::string>& GetLoadedSceneWarnings() const { return m_LoadedSceneWarnings; }
+    bool HasLoadedFlatBufferScene() const;
+    const SimRuntime::SceneRuntime* GetLoadedScene() const;
+    const std::vector<std::string>& GetLoadedSceneWarnings() const;
+    const std::vector<std::string>& GetLoadedSceneNames() const;
+    int GetActiveLoadedSceneIndex() const;
+    bool SetActiveLoadedSceneIndex(int index);
+
+    const std::vector<std::string>& GetLoadedCameraNames() const;
+    int GetActiveLoadedCameraIndex() const;
+    bool SetActiveLoadedCameraIndex(int index);
+    void ClearActiveLoadedCameraSelection();
+    bool IsUsingLoadedCamera() const { return m_ActiveLoadedCameraIndex >= 0; }
 
     int GetLastRenderCpu() const { return m_LastRenderCpu.load(); }
     int GetLastSimulationCpu() const { return m_LastSimulationCpu.load(); }
@@ -236,6 +248,7 @@ private:
     VkDescriptorSetLayout m_DescriptorSetLayout = VK_NULL_HANDLE;
     VkPipelineLayout m_PipelineLayout = VK_NULL_HANDLE;
     VkPipeline m_GraphicsPipeline = VK_NULL_HANDLE;
+    VkPipeline m_GraphicsPipelineNoCull = VK_NULL_HANDLE;
 
     // --- Buffers ---
     VkBuffer m_VertexBuffer = VK_NULL_HANDLE;
@@ -298,8 +311,10 @@ private:
     float m_OrthoSize = 6.0f;
 
     bool m_HasLoadedFlatBufferScene = false;
-    SimRuntime::SceneRuntime m_LoadedScene{};
-    std::vector<std::string> m_LoadedSceneWarnings;
+    std::vector<SimRuntime::SceneRuntime> m_LoadedScenes;
+    std::vector<std::vector<std::string>> m_LoadedSceneWarningsByIndex;
+    std::vector<std::string> m_LoadedSceneNames;
+    int m_ActiveLoadedSceneIndex = -1;
 
     // Add callback declaration
     static void mouseCallback(GLFWwindow* window, double xpos, double ypos);
@@ -307,4 +322,12 @@ private:
     // --- Performance Metrics ---
     std::atomic<int> m_LastRenderCpu{ -1 };
     std::atomic<int> m_LastSimulationCpu{ -1 };
+
+    // --- Cached Camera State (NEW) ---
+    std::vector<std::string> m_ActiveLoadedCameraNames;
+    int m_ActiveLoadedCameraIndex = -1;
+    std::vector<std::string> m_CachedCameraNames;
+
+    // --- Methods (NEW) ---
+    void RefreshActiveLoadedCameraCache();
 };

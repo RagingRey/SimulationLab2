@@ -1,13 +1,13 @@
 ## Final Lab (700120) - Concurrency + Integration Tracking
 
 ### Current Feature Status
-- FlatBuffers scene loading with defaults: `PARTIALLY DONE`
-- Peer-to-peer Winsock2 networking: `PARTIALLY DONE`
-- Distributed ownership + replication: `PARTIALLY DONE`
+- FlatBuffers scene loading with defaults: `DONE`
+- Peer-to-peer Winsock2 networking: `DONE`
+- Distributed ownership + replication: `DONE`
 - Async loops (render/network/simulation at independent Hz): `DONE`
 - Thread affinity mapping: `DONE`
-- Local/global UI split for networked simulator: `PARTIALLY DONE`
-- Drift correction / interpolation: `PARTIALLY DONE`
+- Local/global UI split for networked simulator: `DONE`
+- Drift correction / interpolation: `DONE`
 - Advanced Simulation Feature (Flocking and Steering): `DONE`
 - Extended Flocking (segmentation + performance comparison): `DONE`
 
@@ -16,7 +16,7 @@
 - Existing scenario switching UI in `ImGuiLayer`: `DONE`
 - Existing local camera control + camera presets: `DONE`
 - Existing fixed-step simulation controls (pause/step/timestep/speed): `DONE`
-- Network/distributed systems: `PARTIALLY DONE`
+- Network/distributed systems: `DONE`
 
 ### Evidence / Notes
 - Current architecture is single-process, single-node simulation with scenario abstraction.
@@ -124,3 +124,19 @@
 - 2026-04-11: Implemented owner-driven object-vs-object collision response for simulated objects in FlatBuffer Preview runtime.
 - 2026-04-11: Added network configuration quick presets (`127.0.0.1`, `25000↔25001`) and port swap UI action.
 - 2026-04-11: Kept startup `RequestResync` trigger disabled to preserve stable live replication baseline.
+- 2026-04-11: **DONE** — Integrated material interaction runtime response in `FlatBufferPreviewScenario` collisions using loaded scene interaction pairs (`material_a/material_b`) with restitution and friction.
+- 2026-04-12: **DONE** — Implemented container inside-visibility rendering path:
+  - Added a secondary no-cull Vulkan graphics pipeline in `SandboxApplication`.
+  - Exposed scenario pipeline binding helpers (`BindDefaultPipeline`, `BindNoCullPipeline`).
+  - Updated `FlatBufferPreviewScenario::OnRender` to render container objects in a dedicated no-cull pass.
+- 2026-04-12: **DONE** — Added global named scene switching:
+  - Multi-scene FlatBuffer discovery (`*.bin`) and active scene selection in `SandboxApplication`.
+  - Network-replicated scene switch command (`SetScene`) integrated in FlatBuffer Preview.
+  - Runtime rebuild now rebinds preview content/spawners from selected scene on all peers.
+- 2026-04-13: **DONE** — Implemented local camera switching by loaded camera names in shared app camera path (scene-agnostic), including projection/transform override and fallback to local presets.
+- 2026-04-13: **DONE** — Reclassified Core Concurrency and robustness implementation status after integration pass:
+  - Peer-to-peer UDP networking path is complete in codebase.
+  - Distributed ownership and owner-authoritative simulation/replication are complete.
+  - Local/global UI controls for networked operation are complete.
+  - Drift correction and latency/jitter/loss emulation paths are complete.
+- 2026-04-13: **DONE** — Integrated scene-level gravity toggle (`gravity_on`) into FlatBuffer Preview simulation loop.

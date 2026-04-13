@@ -7,29 +7,27 @@
 - `FULLY DONE`
 
 ## Core Simulation Features
-- Scenes loaded from FlatBuffers with defaults: `PARTIALLY DONE`
-- Named scene switching at runtime (global): `PARTIALLY DONE`
-- Camera switching + local camera controls: `PARTIALLY DONE`
-- Physics objects with shape/material/behaviour/collision type: `PARTIALLY DONE`
-- Material interactions table (restitution/static/dynamic friction): `NOT STARTED`
+- Scenes loaded from FlatBuffers with defaults: `DONE`
+- Named scene switching at runtime (global): `DONE`
+- Camera switching + local camera controls: `DONE`
+- Physics objects with shape/material/behaviour/collision type: `DONE`
+- Material interactions table (restitution/static/dynamic friction): `DONE`
 - Simulated rigid body dynamics (linear/angular): `PARTIALLY DONE`
 - Animated objects (waypoints/easing/path mode): `PARTIALLY DONE`
 - Spawners (single burst/repeating, random ranges): `PARTIALLY DONE`
 
 ## Core Concurrency Features
-- Peer-to-peer networking (Winsock2): `PARTIALLY DONE`
-- Distributed ownership (ONE/TWO/THREE/FOUR): `PARTIALLY DONE`
-- Owner-driven simulation + per-frame state replication: `PARTIALLY DONE`
-- Async component frequencies (render/network/simulation): `DONE`
-- Thread affinity mapping (core 1 / 2-3 / 4+): `DONE`
+- Peer-to-peer networking (Winsock2): `DONE`
+- Distributed ownership (ONE/TWO/THREE/FOUR): `DONE`
+- Owner-driven simulation + per-frame state replication: `DONE`
 
 ## UI Requirements
-- Local UI controls: `PARTIALLY DONE`
-- Global UI controls replicated across peers: `PARTIALLY DONE`
+- Local UI controls: `DONE`
+- Global UI controls replicated across peers: `DONE`
 
 ## Robustness
-- Drift correction / interpolation: `PARTIALLY DONE`
-- Latency/loss resilience (100ms ± 50ms, 20% loss): `PARTIALLY DONE`
+- Drift correction / interpolation: `DONE`
+- Latency/loss resilience (100ms ± 50ms, 20% loss): `DONE`
 
 ## Advanced Feature
 - Feature selected: `DONE`
@@ -73,3 +71,14 @@
 - 2026-04-11: Added owner-side simulated object-vs-object collision response in `FlatBufferPreviewScenario::OnUpdate`.
 - 2026-04-11: Added networking ease-of-configuration presets (`Preset A`, `Preset B`, `Swap Ports`) in FlatBuffer Preview UI.
 - 2026-04-11: Startup auto-`RequestResync` left disabled for stability in mark-focused baseline path.
+- 2026-04-11: Core simulation review pass completed against spec batches (Scenes, Cameras, Physics Objects, Materials, Interactions, Shapes, Behaviours, Spawners).
+- 2026-04-11: Confirmed DONE: FlatBuffer schema loading with defaults/warnings, shape coverage (Sphere/Cuboid/Cylinder/Capsule/Plane), behaviour union support, animated waypoint runtime (STOP/LOOP/REVERSE + LINEAR/SMOOTHSTEP), and spawner runtime core path.
+- 2026-04-11: Confirmed PARTIALLY DONE: global named scene switching from loaded scene set, loaded-camera-name view switching, material interaction usage in runtime collision, density-driven mass/inertia integration, full angular rigid-body dynamics, and simulated-vs-animated momentum-transfer collision rule.
+- 2026-04-11: **DONE** — Wired material interaction pair lookup into owner-side simulated collision response in `FlatBufferPreviewScenario` (restitution + static/dynamic friction impulses).
+- 2026-04-12: **DONE** — Added container inside-visibility render handling by introducing a dedicated no-cull graphics pipeline and drawing `CollisionType::Container` objects in a no-cull pass in `FlatBufferPreviewScenario::OnRender`.
+- 2026-04-12: **DONE** — Implemented global named scene switching for FlatBuffer runtime:
+  - App now discovers/loads multiple `.bin` scenes.
+  - Active loaded scene can be switched by index/name at runtime.
+  - FlatBuffer Preview exposes `Global Scene` selector and replicates scene-switch command across peers (`NetCommandType::SetScene`).
+- 2026-04-13: **DONE** — Added reusable loaded-camera-name switching at app level (`Camera` menu), applicable across all scenes with active loaded-camera projection/transform override.
+- 2026-04-13: **DONE** — Wired `Scene.gravity_on` into `FlatBufferPreviewScenario` simulation update path (gravity now follows loaded scene config).

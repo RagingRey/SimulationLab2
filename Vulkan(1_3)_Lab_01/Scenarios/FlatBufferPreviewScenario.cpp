@@ -48,6 +48,113 @@ namespace
         };
         return colors[i % (sizeof(colors) / sizeof(colors[0]))];
     }
+
+    float FindMaterialDensity(const SimRuntime::SceneRuntime* scene, const std::string& materialName)
+    {
+        constexpr float kDefaultDensity = 1000.0f;
+        if (!scene) return kDefaultDensity;
+
+        for (const auto& m : scene->materials) {
+            if (m.name == materialName) {
+                return (m.density > 0.0f) ? m.density : kDefaultDensity;
+            }
+        }
+
+        return kDefaultDensity;
+    }
+
+    float ComputeMassFromShape(SimRuntime::ShapeType shape, float radius, float height, const glm::vec3& size, float density)
+    {
+        constexpr float kPi = 3.14159265358979323846f;
+
+        radius = std::max(0.0f, radius);
+        height = std::max(0.0f, height);
+        const glm::vec3 s = glm::max(size, glm::vec3(0.0f));
+
+        float volume = 0.0f;
+        switch (shape) {
+        case SimRuntime::ShapeType::Sphere:
+            volume = (4.0f / 3.0f) * kPi * radius * radius * radius;
+            break;
+        case SimRuntime::ShapeType::Cylinder:
+            volume = kPi * radius * radius * height;
+            break;
+        case SimRuntime::ShapeType::Capsule:
+            volume = (kPi * radius * radius * height) + ((4.0f / 3.0f) * kPi * radius * radius * radius);
+            break;
+        case SimRuntime::ShapeType::Cuboid:
+            volume = s.x * s.y * s.z;
+            break;
+        case SimRuntime::ShapeType::Plane:
+        default:
+            return 0.0f; // static/infinite-style for this simplified model
+        }
+
+        return std::max(0.0f, density * volume);
+    }
+
+    float ComputeMassFromSpawnerShape(SimRuntime::SpawnerShapeType shape, float radius, float height, const glm::vec3& size, float density)
+    {
+        switch (shape) {
+        case SimRuntime::SpawnerShapeType::Sphere:
+            return ComputeMassFromShape(SimRuntime::ShapeType::Sphere, radius, 0.0f, glm::vec3(0.0f), density);
+        case SimRuntime::SpawnerShapeType::Cylinder:
+            return ComputeMassFromShape(SimRuntime::ShapeType::Cylinder, radius, height, glm::vec3(0.0f), density);
+        case SimRuntime::SpawnerShapeType::Capsule:
+            return ComputeMassFromShape(SimRuntime::ShapeType::Capsule, radius, height, glm::vec3(0.0f), density);
+        case SimRuntime::SpawnerShapeType::Cuboid:
+        default:
+            return ComputeMassFromShape(SimRuntime::ShapeType::Cuboid, 0.0f, 0.0f, size, density);
+        }
+    }
+
+    float ComputeInertiaScalarFromShape(
+        SimRuntime::ShapeType shape,
+        float radius,
+        float height,
+        const glm::vec3& size,
+        float mass)
+    {
+        if (mass <= 1e-6f) return 0.0f;
+
+        radius = std::max(0.001f, radius);
+        height = std::max(0.001f, height);
+        const glm::vec3 s = glm::max(size, glm::vec3(0.001f));
+
+        switch (shape) {
+        case SimRuntime::ShapeType::Sphere:
+            return 0.4f * mass * radius * radius; // 2/5 m r^2
+
+        case SimRuntime::ShapeType::Cuboid:
+        {
+            const float ix = (mass / 12.0f) * (s.y * s.y + s.z * s.z);
+            const float iy = (mass / 12.0f) * (s.x * s.x + s.z * s.z);
+            const float iz = (mass / 12.0f) * (s.x * s.x + s.y * s.y);
+            return (ix + iy + iz) / 3.0f;
+        }
+
+        case SimRuntime::ShapeType::Cylinder:
+        {
+            const float ix = (mass / 12.0f) * (3.0f * radius * radius + height * height);
+            const float iy = 0.5f * mass * radius * radius;
+            const float iz = ix;
+            return (ix + iy + iz) / 3.0f;
+        }
+
+        case SimRuntime::ShapeType::Capsule:
+        {
+            const float h = height + 2.0f * radius; // quick approximation
+            const float ix = (mass / 12.0f) * (3.0f * radius * radius + h * h);
+            const float iy = 0.5f * mass * radius * radius;
+            const float iz = ix;
+            return (ix + iy + iz) / 3.0f;
+        }
+
+        case SimRuntime::ShapeType::Plane:
+        default:
+            return 0.0f;
+        }
+    }
 }
 
 void FlatBufferPreviewScenario::Clear() {
@@ -238,7 +345,7 @@ void FlatBufferPreviewScenario::ReceiveRemoteSpawnPackets()
         item.isSimulated = true;
         item.isLocallyOwned = (item.owner == m_LocalPeerOwner);
         item.spawnedBySpawner = true;
-        item.inverseMass = 1.0f;
+        item.inverseMass = 0.0f;
         item.restitution = 0.45f;
 
         item.baseTransform.position = { p.pos[0], p.pos[1], p.pos[2] };
@@ -271,10 +378,73 @@ void FlatBufferPreviewScenario::ReceiveRemoteSpawnPackets()
         }
         }
 
+        const float density = FindMaterialDensity(m_App->GetLoadedScene(), item.material);
+
+        // REPLACE in ReceiveRemoteSpawnPackets(),
+// from: float shapeRadiusForMass = 0.0f; ... down to item.inverseInertia assignment
+
+        float shapeRadiusForMass = 0.0f;
+        float shapeHeightForMass = 0.0f;
+        glm::vec3 shapeSizeForMass(0.0f);
+
+        switch (shape) {
+        case SimRuntime::SpawnerShapeType::Sphere:
+            shapeRadiusForMass = std::max(0.05f, p.radius);
+            break;
+        case SimRuntime::SpawnerShapeType::Cylinder:
+            shapeRadiusForMass = std::max(0.05f, p.radius);
+            shapeHeightForMass = std::max(0.10f, p.height);
+            break;
+        case SimRuntime::SpawnerShapeType::Capsule:
+            shapeRadiusForMass = std::max(0.05f, p.radius);
+            shapeHeightForMass = std::max(0.10f, p.height);
+            break;
+        case SimRuntime::SpawnerShapeType::Cuboid:
+        default:
+            shapeSizeForMass = glm::max(glm::vec3(0.05f), glm::vec3(p.size[0], p.size[1], p.size[2]));
+            break;
+        }
+
+        const float mass = ComputeMassFromSpawnerShape(shape, shapeRadiusForMass, shapeHeightForMass, shapeSizeForMass, density);
+        item.inverseMass = (mass > 1e-6f) ? (1.0f / mass) : 0.0f;
+
+        switch (shape) {
+        case SimRuntime::SpawnerShapeType::Sphere:
+            item.shapeType = SimRuntime::ShapeType::Sphere;
+            item.shapeRadius = shapeRadiusForMass;
+            item.shapeHeight = 0.0f;
+            item.shapeSize = glm::vec3(0.0f);
+            break;
+        case SimRuntime::SpawnerShapeType::Cylinder:
+            item.shapeType = SimRuntime::ShapeType::Cylinder;
+            item.shapeRadius = shapeRadiusForMass;
+            item.shapeHeight = shapeHeightForMass;
+            item.shapeSize = glm::vec3(0.0f);
+            break;
+        case SimRuntime::SpawnerShapeType::Capsule:
+            item.shapeType = SimRuntime::ShapeType::Capsule;
+            item.shapeRadius = shapeRadiusForMass;
+            item.shapeHeight = shapeHeightForMass;
+            item.shapeSize = glm::vec3(0.0f);
+            break;
+        case SimRuntime::SpawnerShapeType::Cuboid:
+        default:
+            item.shapeType = SimRuntime::ShapeType::Cuboid;
+            item.shapeRadius = 0.0f;
+            item.shapeHeight = 0.0f;
+            item.shapeSize = shapeSizeForMass;
+            break;
+        }
+
+        const float inertia = ComputeInertiaScalarFromShape(
+            item.shapeType, item.shapeRadius, item.shapeHeight, item.shapeSize, mass);
+        item.inverseInertia = (inertia > 1e-6f) ? (1.0f / inertia) : 0.0f;
+
         item.model = BuildModelMatrix(item.baseTransform);
         item.initialModel = item.model;
         item.initialBaseTransform = item.baseTransform;
         item.initialLinearVelocity = item.linearVelocity;
+        item.initialAngularVelocityDeg = item.angularVelocityDeg;
         item.buffers = m_App->UploadMesh(item.mesh);
 
         m_NextObjectId = std::max(m_NextObjectId, p.objectId + 1);
@@ -322,6 +492,24 @@ void FlatBufferPreviewScenario::SendResyncSnapshot()
         p.tick = m_NetTick;
         m_Network.SendState(p);
     }
+}
+
+void FlatBufferPreviewScenario::ApplyLoadedSceneSwitch(int sceneIndex)
+{
+    if (!m_App->SetActiveLoadedSceneIndex(sceneIndex)) {
+        return;
+    }
+
+    Clear();
+    m_UsingFallbackData = false;
+    m_NextObjectId = 1;
+    m_NetTick = 0;
+
+    BuildFromLoadedScene();
+    InitRuntimeSpawnersFromScene();
+    RefreshOwnershipFlagsAndStats();
+
+    m_DelayedIncomingStates.clear();
 }
 
 void FlatBufferPreviewScenario::InitRuntimeSpawnersFromScene()
@@ -382,7 +570,7 @@ void FlatBufferPreviewScenario::UpdateRuntimeSpawners(float dt)
             item.baseTransform = BuildSpawnTransform(s.def.base.location);
             item.linearVelocity = RandomVec3InRange(s.def.base.linearVelocity);
             item.restitution = 0.45f;
-            item.inverseMass = 1.0f;
+            item.inverseMass = 0.0f;
 
             const glm::vec3 col = ColorForIndex(item.objectId);
 
@@ -446,10 +634,47 @@ void FlatBufferPreviewScenario::UpdateRuntimeSpawners(float dt)
             }
             }
 
+            const float density = FindMaterialDensity(m_App->GetLoadedScene(), item.material);
+            const float mass = ComputeMassFromSpawnerShape(s.def.shape, shapeRadius, shapeHeight, shapeSize, density);
+            item.inverseMass = (mass > 1e-6f) ? (1.0f / mass) : 0.0f;
+
+            switch (s.def.shape) {
+            case SimRuntime::SpawnerShapeType::Sphere:
+                item.shapeType = SimRuntime::ShapeType::Sphere;
+                item.shapeRadius = std::max(0.05f, shapeRadius);
+                item.shapeHeight = 0.0f;
+                item.shapeSize = glm::vec3(0.0f);
+                break;
+            case SimRuntime::SpawnerShapeType::Cylinder:
+                item.shapeType = SimRuntime::ShapeType::Cylinder;
+                item.shapeRadius = std::max(0.05f, shapeRadius);
+                item.shapeHeight = std::max(0.10f, shapeHeight);
+                item.shapeSize = glm::vec3(0.0f);
+                break;
+            case SimRuntime::SpawnerShapeType::Capsule:
+                item.shapeType = SimRuntime::ShapeType::Capsule;
+                item.shapeRadius = std::max(0.05f, shapeRadius);
+                item.shapeHeight = std::max(0.10f, shapeHeight);
+                item.shapeSize = glm::vec3(0.0f);
+                break;
+            case SimRuntime::SpawnerShapeType::Cuboid:
+            default:
+                item.shapeType = SimRuntime::ShapeType::Cuboid;
+                item.shapeRadius = 0.0f;
+                item.shapeHeight = 0.0f;
+                item.shapeSize = glm::max(glm::vec3(0.05f), shapeSize);
+                break;
+            }
+
+            const float inertia = ComputeInertiaScalarFromShape(
+                item.shapeType, item.shapeRadius, item.shapeHeight, item.shapeSize, mass);
+            item.inverseInertia = (inertia > 1e-6f) ? (1.0f / inertia) : 0.0f;
+
             item.model = BuildModelMatrix(item.baseTransform);
             item.initialModel = item.model;
             item.initialBaseTransform = item.baseTransform;
             item.initialLinearVelocity = item.linearVelocity;
+            item.initialAngularVelocityDeg = item.angularVelocityDeg;
             item.buffers = m_App->UploadMesh(item.mesh);
 
             m_Items.push_back(std::move(item));
@@ -498,13 +723,28 @@ void FlatBufferPreviewScenario::BuildFromLoadedScene() {
         item.behaviourType = obj.behaviourType;
         item.owner = obj.owner;
         item.model = BuildModelMatrix(obj.transform);
+        item.collisionType = obj.collisionType;
 
         item.baseTransform = obj.transform;
         if (obj.behaviourType == SimRuntime::BehaviourType::Simulated) {
             item.isSimulated = true;
             item.linearVelocity = obj.initialState.linearVelocity;
-            item.inverseMass = 1.0f; // placeholder until density/mass calc integration
+            item.angularVelocityDeg = obj.initialState.angularVelocityDeg;
             item.restitution = 0.45f;
+            item.shapeType = obj.shapeType;
+            item.shapeRadius = std::max(0.05f, obj.radius);
+            item.shapeHeight = std::max(0.10f, obj.height);
+            item.shapeSize = glm::max(obj.size, glm::vec3(0.05f));
+
+
+            const float density = FindMaterialDensity(scene, item.material);
+            const float mass = ComputeMassFromShape(obj.shapeType, obj.radius, obj.height, obj.size, density);
+
+            item.inverseMass = (mass > 1e-6f) ? (1.0f / mass) : 0.0f;
+
+            const float inertia = ComputeInertiaScalarFromShape(
+                item.shapeType, item.shapeRadius, item.shapeHeight, item.shapeSize, mass);
+            item.inverseInertia = (inertia > 1e-6f) ? (1.0f / inertia) : 0.0f;
         }
 
         if (obj.behaviourType == SimRuntime::BehaviourType::Animated) {
@@ -562,6 +802,7 @@ void FlatBufferPreviewScenario::BuildFromLoadedScene() {
         item.initialModel = item.model;
         item.initialBaseTransform = item.baseTransform;
         item.initialLinearVelocity = item.linearVelocity;
+        item.initialAngularVelocityDeg = item.angularVelocityDeg;
         m_Items.push_back(std::move(item));
     }
 }
@@ -673,6 +914,7 @@ void FlatBufferPreviewScenario::OnLoad() {
     m_UsingFallbackData = false;
     m_NextObjectId = 1;
     m_NetTick = 0;
+    m_PendingSceneSwitchIndex.store(-1);
     BuildFromLoadedScene();
     InitRuntimeSpawnersFromScene();
     RefreshOwnershipFlagsAndStats();
@@ -733,9 +975,16 @@ void FlatBufferPreviewScenario::OnUpdate(float deltaTime) {
 
     std::lock_guard<std::mutex> lock(m_ItemsMutex);
 
+    if (const int sceneIndex = m_PendingSceneSwitchIndex.exchange(-1); sceneIndex >= 0) {
+        ApplyLoadedSceneSwitch(sceneIndex);
+    }
+
     UpdateRuntimeSpawners(deltaTime);
 
-    for (auto& item : m_Items) {
+    std::vector<glm::vec3> animatedVelocities(m_Items.size(), glm::vec3(0.0f));
+
+    for (size_t idx = 0; idx < m_Items.size(); ++idx) {
+        auto& item = m_Items[idx];
         if (item.behaviourType != SimRuntime::BehaviourType::Animated || item.waypoints.size() < 2) {
             continue;
         }
@@ -743,6 +992,7 @@ void FlatBufferPreviewScenario::OnUpdate(float deltaTime) {
         const float lastWpTime = item.waypoints.back().time;
         const float pathEnd = std::max(lastWpTime, 0.0001f);
 
+        const glm::vec3 prevPos = item.baseTransform.position;
         switch (item.pathMode) {
         case SimRuntime::PathMode::Stop:
         {
@@ -801,6 +1051,11 @@ void FlatBufferPreviewScenario::OnUpdate(float deltaTime) {
         default:
             break;
         }
+
+        const glm::vec3 currPos = glm::vec3(item.model[3]);
+        const float invDt = 1.0f / std::max(deltaTime, 1e-6f);
+        animatedVelocities[idx] = (currPos - prevPos) * invDt;
+        item.baseTransform.position = currPos;
     }
 
     // Remote object drift correction / interpolation
@@ -825,7 +1080,10 @@ void FlatBufferPreviewScenario::OnUpdate(float deltaTime) {
         item.model = BuildModelMatrix(item.baseTransform);
     }
 
-    const float gravity = -9.81f;
+    // Use scene-configured gravity flag (default true when no loaded scene)
+    const auto* loadedScene = m_App->GetLoadedScene();
+    const bool gravityEnabled = (loadedScene == nullptr) ? true : loadedScene->gravityOn;
+    const float gravity = gravityEnabled ? -9.81f : 0.0f;
     const float groundY = 0.0f;
 
     for (auto& item : m_Items) {
@@ -835,6 +1093,13 @@ void FlatBufferPreviewScenario::OnUpdate(float deltaTime) {
 
         item.linearVelocity.y += gravity * deltaTime;
         item.baseTransform.position += item.linearVelocity * deltaTime;
+
+        item.baseTransform.orientation.yaw += item.angularVelocityDeg.y * deltaTime;
+        item.baseTransform.orientation.pitch += item.angularVelocityDeg.x * deltaTime;
+        item.baseTransform.orientation.roll += item.angularVelocityDeg.z * deltaTime;
+
+        const float angularDamp = std::exp(-0.8f * deltaTime);
+        item.angularVelocityDeg *= angularDamp;
 
         const float minY = groundY + item.boundRadius;
         if (item.baseTransform.position.y < minY) {
@@ -849,18 +1114,132 @@ void FlatBufferPreviewScenario::OnUpdate(float deltaTime) {
         item.model = BuildModelMatrix(item.baseTransform);
     }
 
-    // Owner-side simulated object vs object collision response
+    struct MaterialContactParams {
+        float restitution = 0.45f;
+        float staticFriction = 0.6f;
+        float dynamicFriction = 0.5f;
+    };
+
+    auto resolveMaterialContact = [&](const std::string& aMat, const std::string& bMat, float fallbackRestitution) -> MaterialContactParams {
+        MaterialContactParams out{};
+        out.restitution = fallbackRestitution;
+
+        if (!loadedScene) return out;
+
+        for (const auto& it : loadedScene->interactions) {
+            const bool direct = (it.materialA == aMat && it.materialB == bMat);
+            const bool reverse = (it.materialA == bMat && it.materialB == aMat);
+            if (direct || reverse) {
+                out.restitution = it.restitution;
+                out.staticFriction = it.staticFriction;
+                out.dynamicFriction = it.dynamicFriction;
+                return out;
+            }
+        }
+
+        return out;
+        };
+
+    // Simulated vs Container (container keeps objects inside its boundary)
     for (size_t i = 0; i < m_Items.size(); ++i) {
         auto& a = m_Items[i];
         if (!a.isSimulated || !a.isLocallyOwned || a.inverseMass <= 0.0f) {
             continue;
         }
 
-        for (size_t j = i + 1; j < m_Items.size(); ++j) {
-            auto& b = m_Items[j];
-            if (!b.isSimulated || !b.isLocallyOwned || b.inverseMass <= 0.0f) {
+        for (size_t j = 0; j < m_Items.size(); ++j) {
+            if (i == j) continue;
+            auto& c = m_Items[j];
+
+            if (c.collisionType != SimRuntime::CollisionType::Container) {
                 continue;
             }
+
+            // simplified boundary: container treated as spherical volume using boundRadius
+            const glm::vec3 toObj = a.baseTransform.position - c.baseTransform.position;
+            const float dist = glm::length(toObj);
+            const float maxCenterDist = std::max(0.0f, c.boundRadius - a.boundRadius);
+
+            if (dist <= maxCenterDist) {
+                continue; // object center still inside allowed region
+            }
+
+            const glm::vec3 n = (dist > 1e-6f) ? (toObj / dist) : glm::vec3(1.0f, 0.0f, 0.0f);
+
+            // pull back to inner boundary
+            a.baseTransform.position = c.baseTransform.position + n * maxCenterDist;
+
+            // reflect only outward component
+            const float vOut = glm::dot(a.linearVelocity, n);
+            if (vOut > 0.0f) {
+                const float e = std::min(a.restitution, 0.8f);
+                a.linearVelocity -= (1.0f + e) * vOut * n;
+            }
+
+            a.model = BuildModelMatrix(a.baseTransform);
+        }
+    }
+
+    // Simulated vs Animated (animated is kinematic: affects simulated only)
+    for (size_t i = 0; i < m_Items.size(); ++i) {
+        auto& a = m_Items[i];
+        if (!a.isSimulated || !a.isLocallyOwned || a.inverseMass <= 0.0f) {
+            continue;
+        }
+
+        for (size_t j = 0; j < m_Items.size(); ++j) {
+            auto& b = m_Items[j];
+            if (b.behaviourType != SimRuntime::BehaviourType::Animated || b.waypoints.size() < 2) {
+                continue;
+            }
+
+            const glm::vec3 delta = a.baseTransform.position - b.baseTransform.position;
+            const float minDist = a.boundRadius + b.boundRadius;
+            const float distSq = glm::length2(delta);
+            if (distSq >= minDist * minDist) {
+                continue;
+            }
+
+            const float dist = std::sqrt(std::max(distSq, 1e-8f));
+            const glm::vec3 n = (dist > 1e-4f) ? (delta / dist) : glm::vec3(1.0f, 0.0f, 0.0f);
+
+            // push simulated object out; animated object path is unchanged
+            const float penetration = minDist - dist;
+            if (penetration > 0.0f) {
+                a.baseTransform.position += n * penetration;
+            }
+
+            const MaterialContactParams contact = resolveMaterialContact(
+                a.material, b.material, std::min(a.restitution, b.restitution));
+
+            const glm::vec3 relVel = a.linearVelocity - animatedVelocities[j];
+            const float velAlongNormal = glm::dot(relVel, n);
+
+            if (velAlongNormal < 0.0f) {
+                const float e = contact.restitution;
+                const float invMassA = a.inverseMass;
+                if (invMassA > 0.0f) {
+                    const float jImpulse = -(1.0f + e) * velAlongNormal / invMassA;
+                    const glm::vec3 impulse = jImpulse * n;
+                    a.linearVelocity += impulse * invMassA;
+                }
+            }
+
+            a.model = BuildModelMatrix(a.baseTransform);
+        }
+    }
+
+    // Owner-side simulated object vs object collision response
+    // Simulated vs Simulated
+    for (size_t i = 0; i < m_Items.size(); ++i) {
+        auto& a = m_Items[i];
+        if (!a.isSimulated || !a.isLocallyOwned || a.inverseMass <= 0.0f) continue;
+        if (a.collisionType == SimRuntime::CollisionType::Container) continue;
+
+        for (size_t j = i + 1; j < m_Items.size(); ++j) {
+            auto& b = m_Items[j];
+            if (!b.isSimulated || !b.isLocallyOwned || b.inverseMass <= 0.0f) continue;
+            if (b.collisionType == SimRuntime::CollisionType::Container) continue;
 
             const glm::vec3 delta = b.baseTransform.position - a.baseTransform.position;
             const float minDist = a.boundRadius + b.boundRadius;
@@ -881,18 +1260,72 @@ void FlatBufferPreviewScenario::OnUpdate(float deltaTime) {
                 b.baseTransform.position += correction;
             }
 
-            // impulse response
-            const glm::vec3 relVel = b.linearVelocity - a.linearVelocity;
+            const MaterialContactParams contact = resolveMaterialContact(
+                a.material, b.material, std::min(a.restitution, b.restitution));
+
+            // impulse response (linear + angular)
+            glm::vec3 omegaA = glm::radians(a.angularVelocityDeg);
+            glm::vec3 omegaB = glm::radians(b.angularVelocityDeg);
+
+            const glm::vec3 rA = n * a.boundRadius;
+            const glm::vec3 rB = -n * b.boundRadius;
+
+            const glm::vec3 vA = a.linearVelocity + glm::cross(omegaA, rA);
+            const glm::vec3 vB = b.linearVelocity + glm::cross(omegaB, rB);
+            const glm::vec3 relVel = vB - vA;
             const float velAlongNormal = glm::dot(relVel, n);
 
             if (velAlongNormal < 0.0f) {
-                const float e = std::min(a.restitution, b.restitution);
-                const float invMassSum = a.inverseMass + b.inverseMass;
-                if (invMassSum > 0.0f) {
-                    const float jImpulse = -(1.0f + e) * velAlongNormal / invMassSum;
-                    const glm::vec3 impulse = jImpulse * n;
-                    a.linearVelocity -= impulse * a.inverseMass;
-                    b.linearVelocity += impulse * b.inverseMass;
+                const float e = contact.restitution;
+
+                const float denom =
+                    a.inverseMass + b.inverseMass +
+                    a.inverseInertia * glm::length2(glm::cross(rA, n)) +
+                    b.inverseInertia * glm::length2(glm::cross(rB, n));
+
+                if (denom > 1e-8f) {
+                    const float jImpulse = -(1.0f + e) * velAlongNormal / denom;
+                    const glm::vec3 normalImpulse = jImpulse * n;
+
+                    a.linearVelocity -= normalImpulse * a.inverseMass;
+                    b.linearVelocity += normalImpulse * b.inverseMass;
+
+                    omegaA -= a.inverseInertia * glm::cross(rA, normalImpulse);
+                    omegaB += b.inverseInertia * glm::cross(rB, normalImpulse);
+
+                    const glm::vec3 vA2 = a.linearVelocity + glm::cross(omegaA, rA);
+                    const glm::vec3 vB2 = b.linearVelocity + glm::cross(omegaB, rB);
+                    const glm::vec3 rel2 = vB2 - vA2;
+
+                    const glm::vec3 tangentVel = rel2 - glm::dot(rel2, n) * n;
+                    const float tangentLen2 = glm::length2(tangentVel);
+
+                    if (tangentLen2 > 1e-10f) {
+                        const glm::vec3 t = tangentVel / std::sqrt(tangentLen2);
+
+                        const float jtDenom =
+                            a.inverseMass + b.inverseMass +
+                            a.inverseInertia * glm::length2(glm::cross(rA, t)) +
+                            b.inverseInertia * glm::length2(glm::cross(rB, t));
+
+                        if (jtDenom > 1e-8f) {
+                            const float jtRaw = -glm::dot(rel2, t) / jtDenom;
+                            const float maxStatic = contact.staticFriction * jImpulse;
+                            const float jt = (std::abs(jtRaw) <= maxStatic)
+                                ? jtRaw
+                                : (-contact.dynamicFriction * jImpulse * (jtRaw > 0.0f ? 1.0f : -1.0f));
+
+                            const glm::vec3 frictionImpulse = jt * t;
+                            a.linearVelocity -= frictionImpulse * a.inverseMass;
+                            b.linearVelocity += frictionImpulse * b.inverseMass;
+
+                            omegaA -= a.inverseInertia * glm::cross(rA, frictionImpulse);
+                            omegaB += b.inverseInertia * glm::cross(rB, frictionImpulse);
+                        }
+                    }
+
+                    a.angularVelocityDeg = glm::degrees(omegaA);
+                    b.angularVelocityDeg = glm::degrees(omegaB);
                 }
             }
 
@@ -931,14 +1364,29 @@ void FlatBufferPreviewScenario::OnRender(VkCommandBuffer commandBuffer) {
         };
 
     // Pass 1: planes
+    m_App->BindDefaultPipeline(commandBuffer);
     for (const auto& item : m_Items) {
         if (item.isPlane) drawItem(item);
     }
 
-    // Pass 2: everything else
+    // Pass 2: non-plane, non-container solids
+    m_App->BindDefaultPipeline(commandBuffer);
     for (const auto& item : m_Items) {
-        if (!item.isPlane) drawItem(item);
+        if (!item.isPlane && item.collisionType != SimRuntime::CollisionType::Container) {
+            drawItem(item);
+        }
     }
+
+    // Pass 3: containers (no culling so interior faces remain visible)
+    m_App->BindNoCullPipeline(commandBuffer);
+    for (const auto& item : m_Items) {
+        if (!item.isPlane && item.collisionType == SimRuntime::CollisionType::Container) {
+            drawItem(item);
+        }
+    }
+
+    // Restore default pipeline for any later draws
+    m_App->BindDefaultPipeline(commandBuffer);
 }
 
 void FlatBufferPreviewScenario::OnUnload() {
@@ -962,6 +1410,30 @@ void FlatBufferPreviewScenario::OnImGui() {
         ImGui::Text("Materials: %d", static_cast<int>(scene->materials.size()));
     } else {
         ImGui::Text("No scene.bin loaded");
+    }
+
+    const auto& sceneNames = m_App->GetLoadedSceneNames();
+    if (!sceneNames.empty()) {
+        int activeScene = m_App->GetActiveLoadedSceneIndex();
+        if (activeScene < 0) activeScene = 0;
+
+        const char* currentSceneLabel = sceneNames[static_cast<size_t>(activeScene)].c_str();
+        if (ImGui::BeginCombo("Global Scene", currentSceneLabel)) {
+            for (int i = 0; i < static_cast<int>(sceneNames.size()); ++i) {
+                const bool selected = (i == activeScene);
+
+                ImGui::PushID(i); // unique ID even when labels repeat
+                if (ImGui::Selectable(sceneNames[static_cast<size_t>(i)].c_str(), selected)) {
+                    m_PendingSceneSwitchIndex.store(i);
+                    SendGlobalCommand(NetCommandType::SetScene, static_cast<float>(i));
+                }
+                if (selected) {
+                    ImGui::SetItemDefaultFocus();
+                }
+                ImGui::PopID();
+            }
+            ImGui::EndCombo();
+        }
     }
 
     if (m_UsingFallbackData) {
@@ -1273,6 +1745,7 @@ void FlatBufferPreviewScenario::ReceiveAndApplyRemoteCommands()
             m_App->Pause();
             break;
         case NetCommandType::Reset:
+            m_PendingSceneSwitchIndex.store(-1);
             ResetRuntimeState();
             break;
         case NetCommandType::SetTimeStep:
@@ -1283,6 +1756,9 @@ void FlatBufferPreviewScenario::ReceiveAndApplyRemoteCommands()
             break;
         case NetCommandType::RequestResync:
             m_ResyncSnapshotRequested.store(true);
+            break;
+        case NetCommandType::SetScene:
+            m_PendingSceneSwitchIndex.store(std::max(0, static_cast<int>(std::lround(c.value))));
             break;
         default:
             break;
@@ -1342,6 +1818,11 @@ void FlatBufferPreviewScenario::NetworkWorkerMain()
 
         {
             std::lock_guard<std::mutex> lock(m_ItemsMutex);
+
+            if (const int sceneIndex = m_PendingSceneSwitchIndex.exchange(-1); sceneIndex >= 0) {
+                ApplyLoadedSceneSwitch(sceneIndex);
+            }
+
             ReceiveRemoteSpawnPackets();
             ReceiveRemoteSimulatedStates(dt);
             SendOwnedSimulatedStates();
@@ -1363,6 +1844,7 @@ void FlatBufferPreviewScenario::ResetRuntimeState()
         item.model = item.initialModel;
         item.baseTransform = item.initialBaseTransform;
         item.linearVelocity = item.initialLinearVelocity;
+        item.angularVelocityDeg = item.initialAngularVelocityDeg;
 
         item.animTime = 0.0f;
         item.reverse = false;

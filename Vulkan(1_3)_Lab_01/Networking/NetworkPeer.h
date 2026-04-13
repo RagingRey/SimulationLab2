@@ -18,7 +18,8 @@ enum class NetCommandType : uint8_t {
     Reset = 3,
     SetTimeStep = 4,
     SetSpeed = 5,
-    RequestResync = 6
+    RequestResync = 6,
+    SetScene = 7
 };
 
 struct SimCommandPacket {

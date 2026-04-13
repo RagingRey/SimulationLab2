@@ -30,10 +30,17 @@ private:
         std::string material;
         SimRuntime::BehaviourType behaviourType = SimRuntime::BehaviourType::Static;
         SimRuntime::OwnerType owner = SimRuntime::OwnerType::One;
+        SimRuntime::CollisionType collisionType = SimRuntime::CollisionType::Solid;
         uint32_t objectId = 0;
 
         bool isPlane = false;
         bool isLocallyOwned = true;
+
+        // shape cache for rigid-body mass/inertia
+        SimRuntime::ShapeType shapeType = SimRuntime::ShapeType::Sphere;
+        float shapeRadius = 0.5f;
+        float shapeHeight = 1.0f;
+        glm::vec3 shapeSize{ 1.0f, 1.0f, 1.0f };
 
         // animated runtime
         SimRuntime::Transform baseTransform{};
@@ -44,18 +51,20 @@ private:
         float animTime = 0.0f;
         bool reverse = false;
 
-        // simulated runtime (NEW)
+        // simulated runtime
         bool isSimulated = false;
         glm::vec3 linearVelocity{ 0.0f };
+        glm::vec3 angularVelocityDeg{ 0.0f, 0.0f, 0.0f };
         float inverseMass = 0.0f;
+        float inverseInertia = 0.0f; // scalar approximation
         float restitution = 0.45f;
         float boundRadius = 0.5f;
 
         glm::mat4 initialModel{ 1.0f };
         SimRuntime::Transform initialBaseTransform{};
         glm::vec3 initialLinearVelocity{ 0.0f };
+        glm::vec3 initialAngularVelocityDeg{ 0.0f, 0.0f, 0.0f };
 
-        // remote replication smoothing
         bool hasReplicatedState = false;
         glm::vec3 replicatedTargetPos{ 0.0f };
         glm::vec3 replicatedTargetVel{ 0.0f };
@@ -154,6 +163,9 @@ private:
     void ReceiveRemoteSpawnPackets();
 
     void SendResyncSnapshot();
+
+    std::atomic<int> m_PendingSceneSwitchIndex{ -1 };
+    void ApplyLoadedSceneSwitch(int sceneIndex);
 
 public:
     explicit FlatBufferPreviewScenario(SandboxApplication* app) : Scenario(app) {}

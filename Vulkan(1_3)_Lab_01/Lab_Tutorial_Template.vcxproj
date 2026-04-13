@@ -227,6 +227,7 @@
     <None Include="glsl glsl shaders\shader.vert" />
     <None Include="glsl shaders\shader.frag" />
     <None Include="glsl shaders\shader.vert" />
+    <None Include="Scenes\scene_second_test.json" />
     <None Include="Scenes\scene_spawner_test.json" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

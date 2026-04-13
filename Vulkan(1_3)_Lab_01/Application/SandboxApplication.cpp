@@ -17,6 +17,7 @@
 #include <set>
 #include <limits>
 #include <filesystem>
+#include <unordered_set>
 
 #ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
@@ -60,6 +61,47 @@ namespace
         }
 
         return mask;
+    }
+
+    std::vector<std::string> CollectCandidateSceneFiles()
+    {
+        namespace fs = std::filesystem;
+
+        std::vector<std::string> out;
+        std::unordered_set<std::string> seen;
+
+        auto addPath = [&](const fs::path& p) {
+            std::error_code ec;
+            if (!fs::exists(p, ec) || ec) return;
+            if (!fs::is_regular_file(p, ec) || ec) return;
+            if (p.extension() != ".bin") return;
+
+            const std::string key = fs::absolute(p, ec).lexically_normal().string();
+            if (ec) return;
+
+            if (seen.insert(key).second) {
+                out.push_back(key);
+            }
+            };
+
+        // Explicit priority candidates first
+        addPath("Scenes/scene.bin");
+        addPath("../Scenes/scene.bin");
+        addPath("scene.bin");
+
+        // Then discover all *.bin under common scene folders
+        const std::vector<fs::path> dirs = { "Scenes", "../Scenes", "." };
+        for (const auto& dir : dirs) {
+            std::error_code ec;
+            if (!fs::exists(dir, ec) || ec || !fs::is_directory(dir, ec)) continue;
+
+            for (const auto& entry : fs::directory_iterator(dir, ec)) {
+                if (ec) break;
+                addPath(entry.path());
+            }
+        }
+
+        return out;
     }
 }
 #endif
@@ -215,44 +257,50 @@ void SandboxApplication::initImGui() {
 
 void SandboxApplication::initScenarios() {
     m_HasLoadedFlatBufferScene = false;
-    m_LoadedScene = {};
-    m_LoadedSceneWarnings.clear();
+    m_LoadedScenes.clear();
+    m_LoadedSceneWarningsByIndex.clear();
+    m_LoadedSceneNames.clear();
+    m_ActiveLoadedSceneIndex = -1;
 
-    const std::vector<std::string> sceneCandidates = {
-        "Scenes/scene.bin",
-        "../Scenes/scene.bin",
-        "scene.bin"
-    };
+    const auto sceneCandidates = CollectCandidateSceneFiles();
 
     for (const auto& path : sceneCandidates) {
-        if (!std::filesystem::exists(path)) {
-            continue;
-        }
-
         auto loadResult = SimRuntime::SceneLoaderFlatBuffer::LoadFromFile(path);
         if (!loadResult.success) {
             std::cerr << "[SceneLoader] Failed to load '" << path << "': " << loadResult.error << std::endl;
             continue;
         }
 
-        m_HasLoadedFlatBufferScene = true;
-        m_LoadedScene = std::move(loadResult.scene);
-        m_LoadedSceneWarnings = std::move(loadResult.warnings);
-
-        std::cout << "[SceneLoader] Loaded scene: " << m_LoadedScene.name
-            << " | objects=" << m_LoadedScene.objects.size()
-            << " | spawners=" << m_LoadedScene.spawners.size()
-            << " | materials=" << m_LoadedScene.materials.size()
-            << " | cameras=" << m_LoadedScene.cameras.size() << std::endl;
-
-        for (const auto& warning : m_LoadedSceneWarnings) {
-            std::cout << "[SceneLoader][Warning] " << warning << std::endl;
+        std::string displayName = loadResult.scene.name;
+        if (displayName.empty()) {
+            displayName = std::filesystem::path(path).stem().string();
         }
 
-        break;
+        m_LoadedSceneNames.push_back(displayName);
+        m_LoadedScenes.push_back(std::move(loadResult.scene));
+        m_LoadedSceneWarningsByIndex.push_back(std::move(loadResult.warnings));
+
+        const auto& loaded = m_LoadedScenes.back();
+        std::cout << "[SceneLoader] Loaded scene: " << displayName
+            << " | objects=" << loaded.objects.size()
+            << " | spawners=" << loaded.spawners.size()
+            << " | materials=" << loaded.materials.size()
+            << " | cameras=" << loaded.cameras.size()
+            << std::endl;
+
+        for (const auto& warning : m_LoadedSceneWarningsByIndex.back()) {
+            std::cout << "[SceneLoader][Warning] " << warning << std::endl;
+        }
     }
 
-    if (!m_HasLoadedFlatBufferScene) {
+    if (!m_LoadedScenes.empty()) {
+        m_HasLoadedFlatBufferScene = true;
+        m_ActiveLoadedSceneIndex = 0;
+        RefreshActiveLoadedCameraCache();
+    }
+    else {
+        m_ActiveLoadedCameraNames.clear();
+        m_ActiveLoadedCameraIndex = -1;
         std::cout << "[SceneLoader] No FlatBuffer scene found yet. Using fallback preview + built-in scenarios." << std::endl;
     }
 
@@ -325,6 +373,11 @@ void SandboxApplication::cleanup() {
     }
 
     cleanupSwapChain();
+
+    if (m_GraphicsPipelineNoCull != VK_NULL_HANDLE) {
+        vkDestroyPipeline(m_Device, m_GraphicsPipelineNoCull, nullptr);
+        m_GraphicsPipelineNoCull = VK_NULL_HANDLE;
+    }
 
     vkDestroyPipeline(m_Device, m_GraphicsPipeline, nullptr);
     vkDestroyPipelineLayout(m_Device, m_PipelineLayout, nullptr);
@@ -776,6 +829,16 @@ void SandboxApplication::createGraphicsPipeline() {
         throw std::runtime_error("Failed to create graphics pipeline!");
     }
 
+    // Clone with culling disabled for container inside visibility
+    VkPipelineRasterizationStateCreateInfo rasterizerNoCull = rasterizer;
+    rasterizerNoCull.cullMode = VK_CULL_MODE_NONE;
+
+    VkGraphicsPipelineCreateInfo noCullPipelineInfo = pipelineInfo;
+    noCullPipelineInfo.pRasterizationState = &rasterizerNoCull;
+
+    if (vkCreateGraphicsPipelines(m_Device, VK_NULL_HANDLE, 1, &noCullPipelineInfo, nullptr, &m_GraphicsPipelineNoCull) != VK_SUCCESS) {
+        throw std::runtime_error("Failed to create no-cull graphics pipeline!");
+    }
     vkDestroyShaderModule(m_Device, fragShaderModule, nullptr);
     vkDestroyShaderModule(m_Device, vertShaderModule, nullptr);
 }
@@ -1107,7 +1170,7 @@ void SandboxApplication::recordCommandBuffer(VkCommandBuffer commandBuffer, uint
     scissor.extent = m_SwapChainExtent;
     vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_GraphicsPipeline);
+    BindDefaultPipeline(commandBuffer);
     VkBuffer vertexBuffers[] = { m_VertexBuffer };
     VkDeviceSize offsets[] = { 0 };
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
@@ -1155,6 +1218,41 @@ void SandboxApplication::recordCommandBuffer(VkCommandBuffer commandBuffer, uint
 
 void SandboxApplication::updateUniformBuffer(uint32_t currentImage) {
     float aspect = m_SwapChainExtent.width / (float)m_SwapChainExtent.height;
+
+    const auto* scene = GetLoadedScene();
+    if (scene &&
+        m_ActiveLoadedCameraIndex >= 0 &&
+        m_ActiveLoadedCameraIndex < static_cast<int>(scene->cameras.size())) {
+
+        const auto& cam = scene->cameras[static_cast<size_t>(m_ActiveLoadedCameraIndex)];
+
+        if (cam.projection == SimRuntime::CameraProjection::Orthographic) {
+            const float halfH = std::max(0.1f, cam.orthoSize);
+            const float halfW = halfH * aspect;
+            m_Camera.SetOrthographic(-halfW, halfW, -halfH, halfH, cam.nearPlane, cam.farPlane);
+        }
+        else {
+            m_Camera.SetPerspective(glm::radians(cam.fov), aspect, cam.nearPlane, cam.farPlane);
+        }
+
+        glm::mat4 r(1.0f);
+        r = glm::rotate(r, glm::radians(cam.transform.orientation.yaw), glm::vec3(0, 1, 0));
+        r = glm::rotate(r, glm::radians(cam.transform.orientation.pitch), glm::vec3(1, 0, 0));
+        r = glm::rotate(r, glm::radians(cam.transform.orientation.roll), glm::vec3(0, 0, 1));
+
+        const glm::vec3 pos = cam.transform.position;
+        const glm::vec3 fwd = glm::normalize(glm::vec3(r * glm::vec4(0, 0, -1, 0)));
+        const glm::vec3 up = glm::normalize(glm::vec3(r * glm::vec4(0, 1, 0, 0)));
+
+        m_Camera.SetLookAt(pos, pos + fwd, up);
+
+        UniformBufferObject ubo{};
+        ubo.model = glm::mat4(1.0f);
+        ubo.view = m_Camera.GetViewMatrix();
+        ubo.proj = m_Camera.GetProjectionMatrix();
+        memcpy(m_UniformBuffersMapped[currentImage], &ubo, sizeof(ubo));
+        return;
+    }
 
     if (m_UseOrthographic) {
         float halfH = m_OrthoSize;
@@ -1539,8 +1637,20 @@ void SandboxApplication::DestroyMeshBuffers(const MeshBuffers& buffers) {
     vkFreeMemory(m_Device, buffers.indexMemory, nullptr);
 }
 
+void SandboxApplication::BindDefaultPipeline(VkCommandBuffer commandBuffer) const {
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_GraphicsPipeline);
+}
+
+void SandboxApplication::BindNoCullPipeline(VkCommandBuffer commandBuffer) const {
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_GraphicsPipelineNoCull);
+}
+
 void SandboxApplication::ProcessInput(float deltaTime)
 {
+    if (IsUsingLoadedCamera()) {
+        return; // loaded camera is authoritative
+    }
+
     // Toggle camera control with right mouse button
     if (glfwGetMouseButton(m_Window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS) {
         if (!m_CameraEnabled) {
@@ -1573,6 +1683,75 @@ void SandboxApplication::ProcessInput(float deltaTime)
         m_Camera.ProcessKeyboard(4, deltaTime);
     if (glfwGetKey(m_Window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS)
         m_Camera.ProcessKeyboard(5, deltaTime);
+}
+
+bool SandboxApplication::HasLoadedFlatBufferScene() const {
+    return m_HasLoadedFlatBufferScene && m_ActiveLoadedSceneIndex >= 0 &&
+        m_ActiveLoadedSceneIndex < static_cast<int>(m_LoadedScenes.size());
+}
+
+const SimRuntime::SceneRuntime* SandboxApplication::GetLoadedScene() const {
+    if (!HasLoadedFlatBufferScene()) return nullptr;
+    return &m_LoadedScenes[static_cast<size_t>(m_ActiveLoadedSceneIndex)];
+}
+
+const std::vector<std::string>& SandboxApplication::GetLoadedSceneWarnings() const {
+    static const std::vector<std::string> empty;
+    if (!HasLoadedFlatBufferScene()) return empty;
+    return m_LoadedSceneWarningsByIndex[static_cast<size_t>(m_ActiveLoadedSceneIndex)];
+}
+
+const std::vector<std::string>& SandboxApplication::GetLoadedSceneNames() const {
+    return m_LoadedSceneNames;
+}
+
+int SandboxApplication::GetActiveLoadedSceneIndex() const {
+    return m_ActiveLoadedSceneIndex;
+}
+
+bool SandboxApplication::SetActiveLoadedSceneIndex(int index) {
+    if (index < 0 || index >= static_cast<int>(m_LoadedScenes.size())) {
+        return false;
+    }
+    m_ActiveLoadedSceneIndex = index;
+    m_HasLoadedFlatBufferScene = true;
+    RefreshActiveLoadedCameraCache();
+    return true;
+}
+
+const std::vector<std::string>& SandboxApplication::GetLoadedCameraNames() const {
+    return m_ActiveLoadedCameraNames;
+}
+
+int SandboxApplication::GetActiveLoadedCameraIndex() const {
+    return m_ActiveLoadedCameraIndex;
+}
+
+bool SandboxApplication::SetActiveLoadedCameraIndex(int index) {
+    if (index < 0 || index >= static_cast<int>(m_ActiveLoadedCameraNames.size())) {
+        return false;
+    }
+    m_ActiveLoadedCameraIndex = index;
+    return true;
+}
+
+void SandboxApplication::ClearActiveLoadedCameraSelection() {
+    m_ActiveLoadedCameraIndex = -1;
+}
+
+void SandboxApplication::RefreshActiveLoadedCameraCache() {
+    m_ActiveLoadedCameraNames.clear();
+    m_ActiveLoadedCameraIndex = -1;
+
+    const auto* scene = GetLoadedScene();
+    if (!scene) return;
+
+    for (size_t i = 0; i < scene->cameras.size(); ++i) {
+        const auto& c = scene->cameras[i];
+        m_ActiveLoadedCameraNames.push_back(
+            c.name.empty() ? ("Camera " + std::to_string(i + 1)) : c.name
+        );
+    }
 }
 
 void SandboxApplication::mouseCallback(GLFWwindow* window, double xpos, double ypos) {
