@@ -1,0 +1,36 @@
+﻿# Copilot Instructions
+
+## Project Guidelines
+- User expects lab question numbering/content to strictly match screenshot prompts.
+- Follow the user's provided lab description strictly for feature scope, especially advanced features and concurrency requirements; avoid proposing out-of-scope options.
+
+## Final Lab Working Rules
+- Always assume requests apply to this codebase (`SimulationLab2`) unless explicitly stated otherwise.
+- When implementing a feature, update markdown tracking immediately with one of:
+  - `DONE`
+  - `PARTIALLY DONE`
+  - `FULLY DONE`
+- Keep progress visible in:
+  - `docs/final-lab-progress.md`
+  - `../Concurrency lab book.md`
+- Track both implementation and report progress as code evolves.
+- Keep architecture and terminology aligned with Final Lab requirements:
+  - FlatBuffers scene loading with defaults
+  - Peer-to-peer Winsock2 networking
+  - Distributed object ownership
+  - Async render/network/sim loops
+  - Thread affinity mapping
+- In project conversations and handoff prompts, focus on mark-bearing tasks and avoid extra/optional constraints language; defer non-essential extras to later.
+
+## Lab Book Scope Clarification
+- Use one lab book:
+  - `../Concurrency lab book.md`
+
+## Current Progress Snapshot
+- FlatBuffers loader: NOT STARTED
+- Peer-to-peer networking: NOT STARTED
+- Ownership replication: NOT STARTED
+- Async loops + affinity: NOT STARTED
+- Global/local UI split: PARTIALLY DONE (basic UI exists, not network-aware)
+- Lab books:
+  - Concurrency lab book: PARTIALLY DONE (legacy content exists; Final Lab sections pending)

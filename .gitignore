@@ -32,5 +32,8 @@
 *.app
 
 # Visual Studio folder
-.vs/
-**/x64/
+# .vs/
+# **/x64/
+
+# Visual Studio files
+*.ipch
