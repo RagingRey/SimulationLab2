@@ -14,7 +14,9 @@
 #include <random>
 #include <unordered_map>
 #include <cstddef>
+#include <deque>
 #include <memory>
+#include <random>
 #include <array>
 
 class FlockingScenario : public Scenario {
@@ -131,6 +133,18 @@ private:
 
     std::array<ModeSample, 3> m_ModeSamples{};
 
+    std::atomic<bool> m_EnableNetEmulation{ false };
+    std::atomic<float> m_EmuBaseLatencyMs{ 100.0f };
+    std::atomic<float> m_EmuJitterMs{ 50.0f };
+    std::atomic<float> m_EmuLossPercent{ 20.0f };
+
+    struct DelayedStatePacket {
+        SimStatePacket packet{};
+        float remainingDelaySec = 0.0f;
+    };
+    std::deque<DelayedStatePacket> m_DelayedIncomingStates;
+    std::mt19937 m_NetRng{ std::random_device{}() };
+
     void BuildFromSceneOrFallback();
     void BuildBoids(uint32_t count, const glm::vec3& center, const glm::vec3& extents);
     void ResetBoids();
@@ -146,7 +160,7 @@ private:
     glm::vec4 BoidTint(const Boid& b) const;
 
     void SendOwnedBoidStates();
-    void ReceiveRemoteBoidStates();
+    void ReceiveRemoteBoidStates(float dt);
 
     void StartNetworkWorker();
     void StopNetworkWorker();

@@ -369,20 +369,50 @@ void FlockingScenario::SendOwnedBoidStates()
     ++m_NetTick;
 }
 
-void FlockingScenario::ReceiveRemoteBoidStates()
+void FlockingScenario::ReceiveRemoteBoidStates(float dt)
 {
     if (!m_NetworkingActive) return;
 
-    const auto packets = m_Network.ReceiveStates();
-    for (const auto& p : packets) {
+    auto applyPacket = [this](const SimStatePacket& p) {
         Boid* b = FindBoidById(p.objectId);
-        if (!b || b->isLocallyOwned) continue;
-
+        if (!b || b->isLocallyOwned) return;
         b->replicatedTargetPos = { p.pos[0], p.pos[1], p.pos[2] };
         b->replicatedTargetVel = { p.vel[0], p.vel[1], p.vel[2] };
         b->hasReplicatedState = true;
-
         m_RxPackets.fetch_add(1);
+        };
+
+    const bool emulate = m_EnableNetEmulation.load();
+    const float baseMs = m_EmuBaseLatencyMs.load();
+    const float jitterMs = m_EmuJitterMs.load();
+    const float lossPct = m_EmuLossPercent.load();
+    std::uniform_real_distribution<float> lossDist(0.0f, 100.0f);
+    std::uniform_real_distribution<float> jitterDist(-jitterMs, jitterMs);
+
+    const auto packets = m_Network.ReceiveStates();
+    for (const auto& p : packets) {
+        if (emulate) {
+            if (lossDist(m_NetRng) < lossPct) continue; // Drop packet
+
+            const float delayedMs = std::max(0.0f, baseMs + jitterDist(m_NetRng));
+            m_DelayedIncomingStates.push_back({ p, delayedMs * 0.001f });
+        }
+        else {
+            applyPacket(p);
+        }
+    }
+
+    if (emulate) {
+        for (auto it = m_DelayedIncomingStates.begin(); it != m_DelayedIncomingStates.end(); ) {
+            it->remainingDelaySec -= dt;
+            if (it->remainingDelaySec <= 0.0f) {
+                applyPacket(it->packet);
+                it = m_DelayedIncomingStates.erase(it);
+            }
+            else {
+                ++it;
+            }
+        }
     }
 }
 
@@ -431,7 +461,7 @@ void FlockingScenario::NetworkWorkerMain()
 
         {
             std::lock_guard<std::mutex> lock(m_BoidsMutex);
-            ReceiveRemoteBoidStates();
+            ReceiveRemoteBoidStates(dt);
             SendOwnedBoidStates();
         }
 
@@ -537,6 +567,30 @@ void FlockingScenario::OnImGui()
             m_Network.Shutdown();
             m_NetworkingActive = false;
         }
+    }
+
+    ImGui::Separator();
+    ImGui::Text("Robustness - Remote Smoothing");
+    ImGui::SliderFloat("Remote Interp Rate", &m_RemoteInterpRate, 1.0f, 40.0f, "%.1f");
+    ImGui::SliderFloat("Remote Snap Distance", &m_RemoteSnapDistance, 0.05f, 5.0f, "%.2f");
+    bool emulate = m_EnableNetEmulation.load();
+    if (ImGui::Checkbox("Enable Delay/Loss Emulation", &emulate)) {
+        m_EnableNetEmulation.store(emulate);
+    }
+
+    float baseMs = m_EmuBaseLatencyMs.load();
+    if (ImGui::SliderFloat("Emu Base Latency (ms)", &baseMs, 0.0f, 300.0f, "%.0f")) {
+        m_EmuBaseLatencyMs.store(baseMs);
+    }
+
+    float jitterMs = m_EmuJitterMs.load();
+    if (ImGui::SliderFloat("Emu Jitter (ms)", &jitterMs, 0.0f, 200.0f, "%.0f")) {
+        m_EmuJitterMs.store(jitterMs);
+    }
+
+    float lossPct = m_EmuLossPercent.load();
+    if (ImGui::SliderFloat("Emu Loss (%)", &lossPct, 0.0f, 50.0f, "%.0f")) {
+        m_EmuLossPercent.store(lossPct);
     }
 
     ImGui::Text("Network Status: %s", m_NetworkingActive ? "ACTIVE" : "INACTIVE");

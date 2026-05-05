@@ -585,16 +585,15 @@ void NetworkedCollisionScenario::ReceiveRemoteCommands_NoLock()
     }
 }
 
-void NetworkedCollisionScenario::ReceiveRemoteStates_NoLock()
+void NetworkedCollisionScenario::ReceiveRemoteStates_NoLock(float dt)
 {
     if (!m_NetworkingActive) return;
 
-    const auto packets = m_Network.ReceiveStates();
-    for (const auto& p : packets) {
+    // Helper lambda to actually apply the packet to the objects
+    auto applyPacket = [this](const SimStatePacket& p) {
         const uint32_t id = p.objectId;
         const glm::vec3 pos{ p.pos[0], p.pos[1], p.pos[2] };
         const glm::vec3 vel{ p.vel[0], p.vel[1], p.vel[2] };
-
         bool applied = false;
 
         for (auto& s : m_Spheres) {
@@ -606,7 +605,6 @@ void NetworkedCollisionScenario::ReceiveRemoteStates_NoLock()
             applied = true;
             break;
         }
-
         if (!applied) {
             for (auto& b : m_Boxes) {
                 if (b.id != id) continue;
@@ -614,12 +612,46 @@ void NetworkedCollisionScenario::ReceiveRemoteStates_NoLock()
                 b.replicatedTargetPos = pos;
                 b.replicatedTargetVel = vel;
                 b.hasReplicatedState = true;
-                applied = true;
                 break;
             }
         }
-
         m_RxPackets.fetch_add(1);
+        };
+
+    const bool emulate = m_EnableNetEmulation.load();
+    const float baseMs = m_EmuBaseLatencyMs.load();
+    const float jitterMs = m_EmuJitterMs.load();
+    const float lossPct = m_EmuLossPercent.load();
+    std::uniform_real_distribution<float> lossDist(0.0f, 100.0f);
+    std::uniform_real_distribution<float> jitterDist(-jitterMs, jitterMs);
+
+    // Read all incoming packets
+    const auto packets = m_Network.ReceiveStates();
+    for (const auto& p : packets) {
+        if (emulate) {
+            if (lossDist(m_NetRng) < lossPct) continue; // Simulate Packet Loss (Drop it)
+
+            // Simulate Latency & Jitter
+            const float delayedMs = std::max(0.0f, baseMs + jitterDist(m_NetRng));
+            m_DelayedIncomingStates.push_back({ p, delayedMs * 0.001f });
+        }
+        else {
+            applyPacket(p);
+        }
+    }
+
+    // Process delayed packets
+    if (emulate) {
+        for (auto it = m_DelayedIncomingStates.begin(); it != m_DelayedIncomingStates.end(); ) {
+            it->remainingDelaySec -= dt;
+            if (it->remainingDelaySec <= 0.0f) {
+                applyPacket(it->packet);
+                it = m_DelayedIncomingStates.erase(it);
+            }
+            else {
+                ++it;
+            }
+        }
     }
 }
 
@@ -830,7 +862,7 @@ void NetworkedCollisionScenario::NetworkWorkerMain()
 
             ReceiveRemoteCommands_NoLock();
             ReceiveRemoteSpawns_NoLock();   // NEW
-            ReceiveRemoteStates_NoLock();
+            ReceiveRemoteStates_NoLock(dt);
             SendOwnedStates_NoLock();
         }
 
@@ -1170,6 +1202,30 @@ void NetworkedCollisionScenario::OnImGui()
                 m_Network.Shutdown();
                 m_NetworkingActive = false;
             }
+        }
+
+        ImGui::Separator();
+        ImGui::Text("Robustness - Remote Smoothing");
+        ImGui::SliderFloat("Remote Interp Rate", &m_RemoteInterpRate, 1.0f, 40.0f, "%.1f");
+        ImGui::SliderFloat("Remote Snap Distance", &m_RemoteSnapDistance, 0.05f, 5.0f, "%.2f");
+        bool emulate = m_EnableNetEmulation.load();
+        if (ImGui::Checkbox("Enable Delay/Loss Emulation", &emulate)) {
+            m_EnableNetEmulation.store(emulate);
+        }
+
+        float baseMs = m_EmuBaseLatencyMs.load();
+        if (ImGui::SliderFloat("Emu Base Latency (ms)", &baseMs, 0.0f, 300.0f, "%.0f")) {
+            m_EmuBaseLatencyMs.store(baseMs);
+        }
+
+        float jitterMs = m_EmuJitterMs.load();
+        if (ImGui::SliderFloat("Emu Jitter (ms)", &jitterMs, 0.0f, 200.0f, "%.0f")) {
+            m_EmuJitterMs.store(jitterMs);
+        }
+
+        float lossPct = m_EmuLossPercent.load();
+        if (ImGui::SliderFloat("Emu Loss (%)", &lossPct, 0.0f, 50.0f, "%.0f")) {
+            m_EmuLossPercent.store(lossPct);
         }
 
         ImGui::Text("Network Status: %s", m_NetworkingActive ? "ACTIVE" : "INACTIVE");

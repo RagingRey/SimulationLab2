@@ -16,6 +16,7 @@
 #include <random>
 #include <string>
 #include <thread>
+#include <deque>
 #include <vector>
 
 class NetworkedCollisionScenario : public Scenario {
@@ -126,6 +127,18 @@ private:
     float m_SpawnSpeed = 8.0f;
     float m_SpawnSpreadDeg = 10.0f;
 
+    std::atomic<bool> m_EnableNetEmulation{ false };
+    std::atomic<float> m_EmuBaseLatencyMs{ 100.0f };
+    std::atomic<float> m_EmuJitterMs{ 50.0f };
+    std::atomic<float> m_EmuLossPercent{ 20.0f };
+
+    struct DelayedStatePacket {
+        SimStatePacket packet{};
+        float remainingDelaySec = 0.0f;
+    };
+    std::deque<DelayedStatePacket> m_DelayedIncomingStates;
+    std::mt19937 m_NetRng{ std::random_device{}() };
+
     // Deterministic random (shared across peers for preset build)
     std::mt19937 m_Rng{ 1337u };
 
@@ -152,7 +165,7 @@ private:
     void ApplyRemoteSmoothing(float dt);
 
     void SendOwnedStates_NoLock();
-    void ReceiveRemoteStates_NoLock();
+    void ReceiveRemoteStates_NoLock(float dt);
     void ReceiveRemoteCommands_NoLock();
 
     // NEW: spawn replication

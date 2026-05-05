@@ -4,16 +4,17 @@ C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\shared\minwindef.h(1
       C:\Users\Beyioku Daniel\Documents\UOH\Simulation\SimulationLab2\GLFW\include\GLFW\glfw3.h(123,11):
       see previous definition of 'APIENTRY'
   
-  CollisionScenario.cpp
-  FlatBufferPreviewScenario.cpp
+  FlockingScenario.cpp
+C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\shared\minwindef.h(130,9): warning C4005: 'APIENTRY': macro redefinition
+  (compiling source file 'Scenarios/FlockingScenario.cpp')
+      C:\Users\Beyioku Daniel\Documents\UOH\Simulation\SimulationLab2\GLFW\include\GLFW\glfw3.h(123,11):
+      see previous definition of 'APIENTRY'
+  
   NetworkedCollisionScenario.cpp
 C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\shared\minwindef.h(130,9): warning C4005: 'APIENTRY': macro redefinition
   (compiling source file 'Scenarios/NetworkedCollisionScenario.cpp')
       C:\Users\Beyioku Daniel\Documents\UOH\Simulation\SimulationLab2\GLFW\include\GLFW\glfw3.h(123,11):
       see previous definition of 'APIENTRY'
   
-  OrientationScenario.cpp
-  SphereDropScenario.cpp
-  PhysicsObject.cpp
   Generating Code...
   Lab_Tutorial_Template.vcxproj -> C:\Users\Beyioku Daniel\Documents\UOH\Simulation\SimulationLab2\Vulkan(1_3)_Lab_01\x64\Debug\Lab_Tutorial_Template(Vulkan1_3).exe
