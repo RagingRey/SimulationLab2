@@ -200,4 +200,68 @@ namespace SimCollision
         const glm::vec3 nLocal = glm::transpose(obb.orientation) * nWorld;
         return glm::dot(glm::abs(nLocal), obb.halfExtents);
     }
+
+    // ---------------------------------------------------------
+    // ADD THIS TO THE BOTTOM OF CollisionUtil.h (Inside namespace SimCollision)
+    // ---------------------------------------------------------
+
+    inline bool SphereVsPlane(const glm::vec3& sphereCenter, float radius, const glm::vec3& planeNormal, const glm::vec3& planePoint, Contact& out)
+    {
+        out = {};
+        float dist = glm::dot(sphereCenter - planePoint, planeNormal);
+
+        if (dist > radius) return false;
+
+        out.hit = true;
+        out.normal = planeNormal; // Push away from the plane
+        out.penetration = radius - dist;
+
+        return true;
+    }
+
+    inline bool OBBVsPlane(const OBB& obb, const glm::vec3& planeNormal, const glm::vec3& planePoint, Contact& out)
+    {
+        out = {};
+        // Use your existing function to find how far the OBB extends toward the plane
+        float projectedRadius = SupportDistanceAlongNormal(obb, planeNormal);
+        float dist = glm::dot(obb.center - planePoint, planeNormal);
+
+        if (dist > projectedRadius) return false;
+
+        out.hit = true;
+        out.normal = planeNormal;
+        out.penetration = projectedRadius - dist;
+
+        return true;
+    }
+
+    // Helper for Capsule
+    inline glm::vec3 ClosestPointOnLineSegment(const glm::vec3& a, const glm::vec3& b, const glm::vec3& p)
+    {
+        glm::vec3 ab = b - a;
+        float t = glm::dot(p - a, ab) / glm::dot(ab, ab);
+        t = glm::clamp(t, 0.0f, 1.0f);
+        return a + t * ab;
+    }
+
+    inline bool SphereVsCapsule(const glm::vec3& sphereCenter, float sphereRadius,
+        const glm::vec3& capA, const glm::vec3& capB, float capRadius,
+        Contact& out)
+    {
+        out = {};
+        glm::vec3 closestPt = ClosestPointOnLineSegment(capA, capB, sphereCenter);
+
+        glm::vec3 delta = sphereCenter - closestPt;
+        float dist2 = glm::dot(delta, delta);
+        float radiusSum = sphereRadius + capRadius;
+
+        if (dist2 > radiusSum * radiusSum) return false;
+
+        float dist = std::sqrt(std::max(dist2, kEps));
+        out.hit = true;
+        out.normal = delta / dist;
+        out.penetration = radiusSum - dist;
+
+        return true;
+    }
 }

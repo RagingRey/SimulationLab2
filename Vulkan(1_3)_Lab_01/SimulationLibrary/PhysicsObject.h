@@ -5,6 +5,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <memory>
 #include "Collider.h"
+#include "CollisionUtil.h"
 #include "IntegrationMethod.h"
 
 class PhysicsObject {
@@ -40,6 +41,12 @@ public:
     float GetInverseMass() const { return m_InverseMass; }
     void SetMass(float mass);
 
+    glm::mat3 GetWorldInverseInertiaTensor() const;
+    void SetLocalInverseInertiaTensor(const glm::mat3& invInertia) { m_LocalInverseInertiaTensor = invInertia; }
+
+    void SetSphereInertia(float mass, float radius);
+    void SetCuboidInertia(float mass, const glm::vec3& halfExtents);
+
     void AddForce(const glm::vec3& force);
     void ClearForces();
 
@@ -50,6 +57,8 @@ public:
     T* GetColliderAs() const { return dynamic_cast<T*>(m_Collider.get()); }
 
     void Update(float deltaTime, float gravity, IntegrationMethod method);
+
+    static void ResolveCollision(class PhysicsObject* objA, class PhysicsObject* objB, const SimCollision::Contact& contact);
 
 private:
     void SyncCollider();
@@ -62,6 +71,7 @@ private:
     float m_Restitution = 0.8f;
 
     float m_Mass = 1.0f;
+    glm::mat3 m_LocalInverseInertiaTensor{ 0.0f };
     float m_InverseMass = 1.0f;
     glm::vec3 m_ForceAccumulator{0.0f};
 

@@ -82,11 +82,11 @@ private:
     void AddPlane(const glm::vec3& point, const glm::vec3& normal, const glm::vec2& size, const glm::vec3& color);
     void AddBox(const glm::vec3& position, const glm::quat& orientation, const glm::vec3& halfExtents, const glm::vec3& velocity, float mass, const glm::vec3& color);
 
-    void ResolveSpherePlane(SphereInstance& sphere, const PlaneCollider& plane);
     void ResolveSphereSphere(SphereInstance& a, SphereInstance& b);
+    void ResolveSpherePlane(SphereInstance& sphere, PlaneInstance& plane); // Changed
 
     void ResolveSphereBox(SphereInstance& sphere, BoxInstance& box);
-    void ResolveBoxPlane(BoxInstance& box, const PlaneCollider& plane);
+    void ResolveBoxPlane(BoxInstance& box, PlaneInstance& plane);
     void ResolveBoxBox(BoxInstance& a, BoxInstance& b);
 
     void ComputeOverlapCount();

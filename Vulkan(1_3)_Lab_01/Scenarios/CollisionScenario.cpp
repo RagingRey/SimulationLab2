@@ -65,6 +65,7 @@ void CollisionScenario::AddSphere(const glm::vec3& position, const glm::vec3& ve
     instance.body.SetVelocity(velocity);
     instance.body.SetRadius(radius);
     instance.body.SetMass(mass);
+    instance.body.SetSphereInertia(mass, radius);
     instance.body.SetRestitution(m_BounceRestitution);
 
     instance.mesh = MeshGenerator::GenerateSphere(radius, 32, 16, color);
@@ -100,6 +101,7 @@ void CollisionScenario::AddBox(const glm::vec3& position, const glm::quat& orien
     instance.body.SetOrientation(orientation);
     instance.body.SetVelocity(velocity);
     instance.body.SetMass(mass);
+    instance.body.SetCuboidInertia(mass, halfExtents);
     instance.body.SetRestitution(m_BounceRestitution);
 
     instance.mesh = BuildCuboidMesh(instance.halfExtents, color);
@@ -107,181 +109,69 @@ void CollisionScenario::AddBox(const glm::vec3& position, const glm::quat& orien
     m_Boxes.push_back(std::move(instance));
 }
 
-void CollisionScenario::ResolveSpherePlane(SphereInstance& sphere, const PlaneCollider& plane) {
-    auto* sphereCollider = sphere.body.GetColliderAs<SphereCollider>();
-    if (!sphereCollider) return;
+void CollisionScenario::ResolveSpherePlane(SphereInstance& sphere, PlaneInstance& plane) {
+    auto* pCol = plane.body.GetColliderAs<PlaneCollider>();
+    if (!pCol) return;
 
-    const float distance = plane.DistanceToPoint(sphereCollider->GetCenter());
-    const float radius = sphereCollider->GetRadius();
-
-    if (distance < radius) {
-        const float penetration = radius - distance;
-        const glm::vec3 normal = plane.GetNormal();
-
-        sphere.body.SetPosition(sphere.body.GetPosition() + normal * penetration);
-
-        glm::vec3 velocity = sphere.body.GetVelocity();
-        const float normalVelocity = glm::dot(velocity, normal);
-
-        if (normalVelocity < 0.0f) {
-            if (m_UseBounce) {
-                const float restitution = sphere.body.GetRestitution();
-                velocity = velocity - (1.0f + restitution) * normalVelocity * normal;
-                sphere.body.SetVelocity(velocity);
-            }
-            else {
-                sphere.body.SetVelocity(glm::vec3(0.0f));
-            }
-        }
+    SimCollision::Contact c{};
+    if (SimCollision::SphereVsPlane(sphere.body.GetPosition(), sphere.body.GetRadius(), pCol->GetNormal(), pCol->GetPoint(), c)) {
+        PhysicsObject::ResolveCollision(&sphere.body, &plane.body, c);
     }
 }
 
 void CollisionScenario::ResolveSphereSphere(SphereInstance& a, SphereInstance& b) {
-    auto* aCollider = a.body.GetColliderAs<SphereCollider>();
-    auto* bCollider = b.body.GetColliderAs<SphereCollider>();
-    if (!aCollider || !bCollider) return;
+    glm::vec3 delta = b.body.GetPosition() - a.body.GetPosition();
+    float dist = glm::length(delta);
+    float radiusSum = a.body.GetRadius() + b.body.GetRadius();
 
-    const glm::vec3 delta = bCollider->GetCenter() - aCollider->GetCenter();
-    const float distance = glm::length(delta);
-    const float radiusSum = aCollider->GetRadius() + bCollider->GetRadius();
-    if (distance <= 0.0f || distance >= radiusSum) return;
-
-    const glm::vec3 normal = delta / distance;
-
-    const float penetration = radiusSum - distance;
-    const float invA = a.body.GetInverseMass();
-    const float invB = b.body.GetInverseMass();
-    const float invSum = invA + invB;
-    if (invSum <= 0.0f) return;
-
-    const glm::vec3 correction = normal * (penetration / invSum);
-    a.body.SetPosition(a.body.GetPosition() - correction * invA);
-    b.body.SetPosition(b.body.GetPosition() + correction * invB);
-
-    glm::vec3 va = a.body.GetVelocity();
-    glm::vec3 vb = b.body.GetVelocity();
-    const glm::vec3 relativeVelocity = vb - va;
-    const float velocityAlongNormal = glm::dot(relativeVelocity, normal);
-    if (velocityAlongNormal > 0.0f) return;
-
-    const float restitution = m_UseBounce ? m_BounceRestitution : 0.0f;
-    const float j = -(1.0f + restitution) * velocityAlongNormal / invSum;
-    const glm::vec3 impulse = j * normal;
-
-    a.body.SetVelocity(va - impulse * invA);
-    b.body.SetVelocity(vb + impulse * invB);
-}
-
-void CollisionScenario::ResolveSphereBox(SphereInstance& sphere, BoxInstance& box)
-{
-    auto* sCol = sphere.body.GetColliderAs<SphereCollider>();
-    auto* bCol = box.body.GetColliderAs<BoxCollider>();
-    if (!sCol || !bCol) return;
-
-    SimCollision::OBB obb{};
-    obb.center = bCol->GetCenter();
-    obb.orientation = bCol->GetOrientation();
-    obb.halfExtents = bCol->GetHalfExtents();
-
-    SimCollision::Contact c{};
-    if (!SimCollision::SphereVsOBB(sCol->GetCenter(), sCol->GetRadius(), obb, c)) return;
-
-    // Push apart (treat normal as box->sphere, but we need A->B style response)
-    const glm::vec3 n = c.normal;
-    const float invS = sphere.body.GetInverseMass();
-    const float invB = box.body.GetInverseMass();
-    const float invSum = invS + invB;
-    if (invSum <= 0.0f) return;
-
-    const glm::vec3 corr = n * (c.penetration / invSum);
-    box.body.SetPosition(box.body.GetPosition() - corr * invB);
-    sphere.body.SetPosition(sphere.body.GetPosition() + corr * invS);
-
-    // Impulse
-    glm::vec3 vs = sphere.body.GetVelocity();
-    glm::vec3 vb = box.body.GetVelocity();
-    const glm::vec3 rel = vs - vb;
-    const float velN = glm::dot(rel, n);
-    if (velN > 0.0f) return;
-
-    const float e = m_UseBounce ? m_BounceRestitution : 0.0f;
-    const float j = -(1.0f + e) * velN / invSum;
-    const glm::vec3 impulse = j * n;
-
-    sphere.body.SetVelocity(vs + impulse * invS);
-    box.body.SetVelocity(vb - impulse * invB);
-}
-
-void CollisionScenario::ResolveBoxPlane(BoxInstance& box, const PlaneCollider& plane)
-{
-    auto* bCol = box.body.GetColliderAs<BoxCollider>();
-    if (!bCol) return;
-
-    SimCollision::OBB obb{};
-    obb.center = bCol->GetCenter();
-    obb.orientation = bCol->GetOrientation();
-    obb.halfExtents = bCol->GetHalfExtents();
-
-    const glm::vec3 n = plane.GetNormal();
-    const float dist = plane.DistanceToPoint(obb.center);
-    const float r = SimCollision::SupportDistanceAlongNormal(obb, n);
-
-    if (dist >= r) return;
-
-    const float penetration = r - dist;
-    box.body.SetPosition(box.body.GetPosition() + n * penetration);
-
-    glm::vec3 v = box.body.GetVelocity();
-    const float vN = glm::dot(v, n);
-    if (vN < 0.0f)
-    {
-        if (m_UseBounce)
-        {
-            const float e = box.body.GetRestitution();
-            v = v - (1.0f + e) * vN * n;
-        }
-        else
-        {
-            v -= vN * n;
-        }
-        box.body.SetVelocity(v);
+    if (dist > 0.0f && dist < radiusSum) {
+        SimCollision::Contact c{};
+        c.hit = true;
+        c.normal = delta / dist; // Normal points from A to B
+        c.penetration = radiusSum - dist;
+        PhysicsObject::ResolveCollision(&a.body, &b.body, c);
     }
 }
 
-void CollisionScenario::ResolveBoxBox(BoxInstance& a, BoxInstance& b)
-{
+void CollisionScenario::ResolveSphereBox(SphereInstance& sphere, BoxInstance& box) {
+    auto* bCol = box.body.GetColliderAs<BoxCollider>();
+    if (!bCol) return;
+
+    SimCollision::OBB obb{ bCol->GetCenter(), bCol->GetOrientation(), bCol->GetHalfExtents() };
+    SimCollision::Contact c{};
+
+    if (SimCollision::SphereVsOBB(sphere.body.GetPosition(), sphere.body.GetRadius(), obb, c)) {
+        // SphereVsOBB normal points Box -> Sphere. We need A -> B (Sphere -> Box), so flip it!
+        c.normal = -c.normal;
+        PhysicsObject::ResolveCollision(&sphere.body, &box.body, c);
+    }
+}
+
+void CollisionScenario::ResolveBoxPlane(BoxInstance& box, PlaneInstance& plane) {
+    auto* bCol = box.body.GetColliderAs<BoxCollider>();
+    auto* pCol = plane.body.GetColliderAs<PlaneCollider>();
+    if (!bCol || !pCol) return;
+
+    SimCollision::OBB obb{ bCol->GetCenter(), bCol->GetOrientation(), bCol->GetHalfExtents() };
+    SimCollision::Contact c{};
+
+    if (SimCollision::OBBVsPlane(obb, pCol->GetNormal(), pCol->GetPoint(), c)) {
+        PhysicsObject::ResolveCollision(&box.body, &plane.body, c);
+    }
+}
+
+void CollisionScenario::ResolveBoxBox(BoxInstance& a, BoxInstance& b) {
     auto* aCol = a.body.GetColliderAs<BoxCollider>();
     auto* bCol = b.body.GetColliderAs<BoxCollider>();
     if (!aCol || !bCol) return;
 
-    SimCollision::OBB A{ aCol->GetCenter(), aCol->GetOrientation(), aCol->GetHalfExtents() };
-    SimCollision::OBB B{ bCol->GetCenter(), bCol->GetOrientation(), bCol->GetHalfExtents() };
-
+    SimCollision::OBB obbA{ aCol->GetCenter(), aCol->GetOrientation(), aCol->GetHalfExtents() };
+    SimCollision::OBB obbB{ bCol->GetCenter(), bCol->GetOrientation(), bCol->GetHalfExtents() };
     SimCollision::Contact c{};
-    if (!SimCollision::OBBVsOBB(A, B, c)) return;
 
-    const glm::vec3 n = c.normal;
-    const float invA = a.body.GetInverseMass();
-    const float invB = b.body.GetInverseMass();
-    const float invSum = invA + invB;
-    if (invSum <= 0.0f) return;
-
-    const glm::vec3 corr = n * (c.penetration / invSum);
-    a.body.SetPosition(a.body.GetPosition() - corr * invA);
-    b.body.SetPosition(b.body.GetPosition() + corr * invB);
-
-    glm::vec3 va = a.body.GetVelocity();
-    glm::vec3 vb = b.body.GetVelocity();
-    const glm::vec3 rel = vb - va;
-    const float velN = glm::dot(rel, n);
-    if (velN > 0.0f) return;
-
-    const float e = m_UseBounce ? m_BounceRestitution : 0.0f;
-    const float j = -(1.0f + e) * velN / invSum;
-    const glm::vec3 impulse = j * n;
-
-    a.body.SetVelocity(va - impulse * invA);
-    b.body.SetVelocity(vb + impulse * invB);
+    if (SimCollision::OBBVsOBB(obbA, obbB, c)) {
+        PhysicsObject::ResolveCollision(&a.body, &b.body, c);
+    }
 }
 
 void CollisionScenario::SetupTestCase(TestCase testCase) {
@@ -487,20 +377,15 @@ void CollisionScenario::OnLoad() { SetupTestCase(m_TestCase); }
 void CollisionScenario::OnUpdate(float deltaTime) {
     const auto method = m_App->GetIntegrationMethod();
 
-    for (auto& sphere : m_Spheres)
-        sphere.body.Update(deltaTime, m_Gravity, method);
-
-    for (auto& box : m_Boxes)
-        box.body.Update(deltaTime, m_Gravity, method);
-
+    // 1. RESOLVE ALL COLLISIONS FIRST
     // Dynamic vs planes
     for (auto& sphere : m_Spheres)
-        for (const auto& plane : m_Planes)
-            if (auto* p = plane.body.GetColliderAs<PlaneCollider>()) ResolveSpherePlane(sphere, *p);
+        for (auto& plane : m_Planes)
+            ResolveSpherePlane(sphere, plane);
 
     for (auto& box : m_Boxes)
-        for (const auto& plane : m_Planes)
-            if (auto* p = plane.body.GetColliderAs<PlaneCollider>()) ResolveBoxPlane(box, *p);
+        for (auto& plane : m_Planes)
+            ResolveBoxPlane(box, plane);
 
     // Sphere-sphere
     for (size_t i = 0; i < m_Spheres.size(); ++i)
@@ -517,6 +402,14 @@ void CollisionScenario::OnUpdate(float deltaTime) {
         for (size_t j = i + 1; j < m_Boxes.size(); ++j)
             ResolveBoxBox(m_Boxes[i], m_Boxes[j]);
 
+    // 2. INTEGRATE (Apply forces and move objects)
+    for (auto& sphere : m_Spheres)
+        sphere.body.Update(deltaTime, m_Gravity, method);
+
+    for (auto& box : m_Boxes)
+        box.body.Update(deltaTime, m_Gravity, method);
+
+    // 3. TESTING / RECORDING LOGIC
     m_ElapsedTime += deltaTime;
     if (!m_Recorded && m_MovingSphereIndex >= 0 && m_MovingSphereIndex < (int)m_Spheres.size() && m_ElapsedTime >= m_TargetTime) {
         m_RecordedPosition = m_Spheres[m_MovingSphereIndex].body.GetPosition();
