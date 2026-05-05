@@ -9,6 +9,7 @@
 #endif
 
 #include "FlatBufferPreviewScenario.h"
+#include "../SimulationLibrary/CollisionUtil.h"
 
 #define GLM_ENABLE_EXPERIMENTAL
 #include <imgui.h>
@@ -87,7 +88,7 @@ namespace
             break;
         case SimRuntime::ShapeType::Plane:
         default:
-            return 0.0f; // static/infinite-style for this simplified model
+            return 0.0f;
         }
 
         return std::max(0.0f, density * volume);
@@ -123,7 +124,7 @@ namespace
 
         switch (shape) {
         case SimRuntime::ShapeType::Sphere:
-            return 0.4f * mass * radius * radius; // 2/5 m r^2
+            return 0.4f * mass * radius * radius;
 
         case SimRuntime::ShapeType::Cuboid:
         {
@@ -143,7 +144,7 @@ namespace
 
         case SimRuntime::ShapeType::Capsule:
         {
-            const float h = height + 2.0f * radius; // quick approximation
+            const float h = height + 2.0f * radius;
             const float ix = (mass / 12.0f) * (3.0f * radius * radius + h * h);
             const float iy = 0.5f * mass * radius * radius;
             const float iz = ix;
@@ -154,6 +155,102 @@ namespace
         default:
             return 0.0f;
         }
+    }
+
+    glm::quat EulerToQuatDeg(const SimRuntime::RotationEuler& e)
+    {
+        const glm::quat qYaw = glm::angleAxis(glm::radians(e.yaw), glm::vec3(0, 1, 0));
+        const glm::quat qPitch = glm::angleAxis(glm::radians(e.pitch), glm::vec3(1, 0, 0));
+        const glm::quat qRoll = glm::angleAxis(glm::radians(e.roll), glm::vec3(0, 0, 1));
+        return qYaw * qPitch * qRoll;
+    }
+
+    SimCollision::OBB MakeObbFromItem(const FlatBufferPreviewScenario::RenderItem& it)
+    {
+        SimCollision::OBB obb{};
+        obb.center = it.baseTransform.position;
+        obb.orientation = glm::mat3_cast(EulerToQuatDeg(it.baseTransform.orientation));
+        obb.halfExtents = glm::max(it.shapeSize * 0.5f, glm::vec3(0.05f));
+        return obb;
+    }
+
+    float SupportDistanceAlongNormalForItem(const FlatBufferPreviewScenario::RenderItem& it, const glm::vec3& nWorld)
+    {
+        if (it.shapeType == SimRuntime::ShapeType::Cuboid) {
+            const auto obb = MakeObbFromItem(it);
+            return SimCollision::SupportDistanceAlongNormal(obb, nWorld);
+        }
+        return std::max(0.05f, it.boundRadius);
+    }
+
+    struct PairContact
+    {
+        bool hit = false;
+        glm::vec3 nAB{ 1,0,0 }; // normal from A -> B
+        float penetration = 0.0f;
+    };
+
+    PairContact ComputePairContact(const FlatBufferPreviewScenario::RenderItem& A, const FlatBufferPreviewScenario::RenderItem& B)
+    {
+        PairContact out{};
+
+        // Cuboid vs Cuboid (true OBB)
+        if (A.shapeType == SimRuntime::ShapeType::Cuboid && B.shapeType == SimRuntime::ShapeType::Cuboid) {
+            SimCollision::Contact c{};
+            const auto obbA = MakeObbFromItem(A);
+            const auto obbB = MakeObbFromItem(B);
+
+            if (!SimCollision::OBBVsOBB(obbA, obbB, c)) return out;
+            out.hit = true;
+            out.nAB = c.normal;          // A -> B
+            out.penetration = c.penetration;
+            return out;
+        }
+
+        // Sphere vs Cuboid (true sphere-OBB)
+        auto sphereVsBox = [&](const FlatBufferPreviewScenario::RenderItem& sphereItem,
+                               const FlatBufferPreviewScenario::RenderItem& boxItem,
+                               bool sphereIsA) -> PairContact
+        {
+            PairContact r{};
+            const auto obb = MakeObbFromItem(boxItem);
+            const glm::vec3 sc = sphereItem.baseTransform.position;
+            const float sr = std::max(0.05f, sphereItem.shapeRadius);
+
+            SimCollision::Contact c{};
+            if (!SimCollision::SphereVsOBB(sc, sr, obb, c)) return r;
+
+            // CollisionUtil gives normal "box -> sphere". Convert to A->B.
+            // If sphere is A, we want nAB (A->B) == sphere->box == -(box->sphere)
+            // If box is A, we want nAB (A->B) == box->sphere == (box->sphere)
+            const glm::vec3 boxToSphere = c.normal;
+
+            r.hit = true;
+            r.penetration = c.penetration;
+            r.nAB = sphereIsA ? (-boxToSphere) : (boxToSphere);
+            return r;
+        };
+
+        if (A.shapeType == SimRuntime::ShapeType::Sphere && B.shapeType == SimRuntime::ShapeType::Cuboid) {
+            return sphereVsBox(A, B, true);
+        }
+        if (A.shapeType == SimRuntime::ShapeType::Cuboid && B.shapeType == SimRuntime::ShapeType::Sphere) {
+            return sphereVsBox(B, A, false);
+        }
+
+        // Fallback (bounding sphere vs bounding sphere) for Sphere/Cylinder/Capsule/etc.
+        const glm::vec3 delta = B.baseTransform.position - A.baseTransform.position;
+        const float minDist = std::max(0.05f, A.boundRadius) + std::max(0.05f, B.boundRadius);
+        const float distSq = glm::length2(delta);
+        if (distSq >= minDist * minDist) return out;
+
+        const float dist = std::sqrt(std::max(distSq, 1e-8f));
+        const glm::vec3 n = (dist > 1e-4f) ? (delta / dist) : glm::vec3(1.0f, 0.0f, 0.0f);
+
+        out.hit = true;
+        out.nAB = n;
+        out.penetration = minDist - dist;
+        return out;
     }
 }
 
@@ -726,16 +823,18 @@ void FlatBufferPreviewScenario::BuildFromLoadedScene() {
         item.collisionType = obj.collisionType;
 
         item.baseTransform = obj.transform;
+
+        // IMPORTANT: cache shape info for ALL objects (so static colliders work)
+        item.shapeType = obj.shapeType;
+        item.shapeRadius = std::max(0.05f, obj.radius);
+        item.shapeHeight = std::max(0.10f, obj.height);
+        item.shapeSize = glm::max(obj.size, glm::vec3(0.05f));
+
         if (obj.behaviourType == SimRuntime::BehaviourType::Simulated) {
             item.isSimulated = true;
             item.linearVelocity = obj.initialState.linearVelocity;
             item.angularVelocityDeg = obj.initialState.angularVelocityDeg;
             item.restitution = 0.45f;
-            item.shapeType = obj.shapeType;
-            item.shapeRadius = std::max(0.05f, obj.radius);
-            item.shapeHeight = std::max(0.10f, obj.height);
-            item.shapeSize = glm::max(obj.size, glm::vec3(0.05f));
-
 
             const float density = FindMaterialDensity(scene, item.material);
             const float mass = ComputeMassFromShape(obj.shapeType, obj.radius, obj.height, obj.size, density);
@@ -771,19 +870,15 @@ void FlatBufferPreviewScenario::BuildFromLoadedScene() {
             item.boundRadius = std::max(std::max(0.05f, obj.radius), std::max(0.05f, obj.height) * 0.5f);
             item.mesh = MeshGenerator::GenerateCylinder(std::max(0.05f, obj.radius), std::max(0.05f, obj.height), 24, c);
             break;
-
         case SimRuntime::ShapeType::Capsule:
             item.boundRadius = std::max(0.05f, obj.radius) + std::max(0.10f, obj.height) * 0.5f;
             item.mesh = MeshGenerator::GenerateCapsule(std::max(0.05f, obj.radius), std::max(0.10f, obj.height), 24, 12, c);
             break;
         case SimRuntime::ShapeType::Plane:
             item.isPlane = true;
+            item.shapeType = SimRuntime::ShapeType::Plane;
+            item.planeNormal = (glm::length(obj.planeNormal) > 1e-5f) ? glm::normalize(obj.planeNormal) : glm::vec3(0, 1, 0);
             item.mesh = MeshGenerator::GeneratePlane(10.0f, 10.0f, 10, 10, c);
-            if (glm::length(obj.planeNormal) > 0.0001f) {
-                glm::vec3 n = glm::normalize(obj.planeNormal);
-                glm::quat q = glm::rotation(glm::vec3(0, 1, 0), n);
-                item.model = item.model * glm::mat4_cast(q);
-            }
             break;
         case SimRuntime::ShapeType::Cuboid:
         {
@@ -1746,6 +1841,7 @@ void FlatBufferPreviewScenario::ReceiveAndApplyRemoteCommands()
             break;
         case NetCommandType::Reset:
             m_PendingSceneSwitchIndex.store(-1);
+            m_PendingPresetSwitchIndex.store(-1);
             ResetRuntimeState();
             break;
         case NetCommandType::SetTimeStep:
@@ -1758,7 +1854,12 @@ void FlatBufferPreviewScenario::ReceiveAndApplyRemoteCommands()
             m_ResyncSnapshotRequested.store(true);
             break;
         case NetCommandType::SetScene:
+            m_PendingPresetSwitchIndex.store(-1);
             m_PendingSceneSwitchIndex.store(std::max(0, static_cast<int>(std::lround(c.value))));
+            break;
+        case NetCommandType::SetPreset:
+            m_PendingSceneSwitchIndex.store(-1);
+            m_PendingPresetSwitchIndex.store(std::max(0, static_cast<int>(std::lround(c.value))));
             break;
         default:
             break;
@@ -1819,10 +1920,7 @@ void FlatBufferPreviewScenario::NetworkWorkerMain()
         {
             std::lock_guard<std::mutex> lock(m_ItemsMutex);
 
-            if (const int sceneIndex = m_PendingSceneSwitchIndex.exchange(-1); sceneIndex >= 0) {
-                ApplyLoadedSceneSwitch(sceneIndex);
-            }
-
+            // IMPORTANT: do NOT rebuild scene/preset from network thread (safer)
             ReceiveRemoteSpawnPackets();
             ReceiveRemoteSimulatedStates(dt);
             SendOwnedSimulatedStates();

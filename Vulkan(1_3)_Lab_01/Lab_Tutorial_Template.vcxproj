@@ -171,6 +171,7 @@
     <ClCompile Include="Scenarios\CollisionScenario.cpp" />
     <ClCompile Include="Scenarios\FlatBufferPreviewScenario.cpp" />
     <ClCompile Include="Scenarios\FlockingScenario.cpp" />
+    <ClCompile Include="Scenarios\NetworkedCollisionScenario.cpp" />
     <ClCompile Include="Scenarios\OrientationScenario.cpp" />
     <ClCompile Include="Scenarios\SphereDropScenario.cpp" />
     <ClCompile Include="Scene\SceneLoaderFlatBuffer.cpp" />
@@ -208,12 +209,14 @@
     <ClInclude Include="Scenarios\CollisionScenario.h" />
     <ClInclude Include="Scenarios\FlatBufferPreviewScenario.h" />
     <ClInclude Include="Scenarios\FlockingScenario.h" />
+    <ClInclude Include="Scenarios\NetworkedCollisionScenario.h" />
     <ClInclude Include="Scenarios\OrientationScenario.h" />
     <ClInclude Include="Scenarios\Scenario.h" />
     <ClInclude Include="Scenarios\SphereDropScenario.h" />
     <ClInclude Include="Scene\SceneLoaderFlatBuffer.h" />
     <ClInclude Include="Scene\SceneRuntime.h" />
     <ClInclude Include="SimulationLibrary\Collider.h" />
+    <ClInclude Include="SimulationLibrary\CollisionUtil.h" />
     <ClInclude Include="SimulationLibrary\IntegrationMethod.h" />
     <ClInclude Include="SimulationLibrary\PhysicsObject.h" />
     <ClInclude Include="ThirdParty\imgui\imconfig.h" />

@@ -1,9 +1,64 @@
-﻿  SandboxApplication.cpp
+﻿  Performing Custom Build Tools
+  Performing Custom Build Tools
+  SandboxApplication.cpp
 C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\shared\minwindef.h(130,9): warning C4005: 'APIENTRY': macro redefinition
   (compiling source file 'Application/SandboxApplication.cpp')
       C:\Users\Beyioku Daniel\Documents\UOH\Simulation\SimulationLab2\GLFW\include\GLFW\glfw3.h(123,11):
       see previous definition of 'APIENTRY'
   
+  main.cpp
+  NetworkPeer.cpp
+  ClearColorScenario.cpp
+  CollisionScenario.cpp
   FlatBufferPreviewScenario.cpp
+  FlockingScenario.cpp
+C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\shared\minwindef.h(130,9): warning C4005: 'APIENTRY': macro redefinition
+  (compiling source file 'Scenarios/FlockingScenario.cpp')
+      C:\Users\Beyioku Daniel\Documents\UOH\Simulation\SimulationLab2\GLFW\include\GLFW\glfw3.h(123,11):
+      see previous definition of 'APIENTRY'
+  
+  NetworkedCollisionScenario.cpp
+C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\shared\minwindef.h(130,9): warning C4005: 'APIENTRY': macro redefinition
+  (compiling source file 'Scenarios/NetworkedCollisionScenario.cpp')
+      C:\Users\Beyioku Daniel\Documents\UOH\Simulation\SimulationLab2\GLFW\include\GLFW\glfw3.h(123,11):
+      see previous definition of 'APIENTRY'
+  
+  OrientationScenario.cpp
+  SphereDropScenario.cpp
+  SceneLoaderFlatBuffer.cpp
+C:\Users\Beyioku Daniel\Documents\UOH\Simulation\SimulationLab2\Vulkan(1_3)_Lab_01\Scene\SceneLoaderFlatBuffer.cpp(195,39): warning C4267: 'argument': conversion from 'size_t' to 'SizeT', possible loss of data
+C:\Users\Beyioku Daniel\Documents\UOH\Simulation\SimulationLab2\Vulkan(1_3)_Lab_01\Scene\SceneLoaderFlatBuffer.cpp(195,39): warning C4267:         with
+C:\Users\Beyioku Daniel\Documents\UOH\Simulation\SimulationLab2\Vulkan(1_3)_Lab_01\Scene\SceneLoaderFlatBuffer.cpp(195,39): warning C4267:         [
+C:\Users\Beyioku Daniel\Documents\UOH\Simulation\SimulationLab2\Vulkan(1_3)_Lab_01\Scene\SceneLoaderFlatBuffer.cpp(195,39): warning C4267:             SizeT=flatbuffers::uoffset_t
+C:\Users\Beyioku Daniel\Documents\UOH\Simulation\SimulationLab2\Vulkan(1_3)_Lab_01\Scene\SceneLoaderFlatBuffer.cpp(195,39): warning C4267:         ]
+C:\Users\Beyioku Daniel\Documents\UOH\Simulation\SimulationLab2\Vulkan(1_3)_Lab_01\Scene\SceneLoaderFlatBuffer.cpp(242,39): warning C4267: 'argument': conversion from 'size_t' to 'SizeT', possible loss of data
+C:\Users\Beyioku Daniel\Documents\UOH\Simulation\SimulationLab2\Vulkan(1_3)_Lab_01\Scene\SceneLoaderFlatBuffer.cpp(242,39): warning C4267:         with
+C:\Users\Beyioku Daniel\Documents\UOH\Simulation\SimulationLab2\Vulkan(1_3)_Lab_01\Scene\SceneLoaderFlatBuffer.cpp(242,39): warning C4267:         [
+C:\Users\Beyioku Daniel\Documents\UOH\Simulation\SimulationLab2\Vulkan(1_3)_Lab_01\Scene\SceneLoaderFlatBuffer.cpp(242,39): warning C4267:             SizeT=flatbuffers::uoffset_t
+C:\Users\Beyioku Daniel\Documents\UOH\Simulation\SimulationLab2\Vulkan(1_3)_Lab_01\Scene\SceneLoaderFlatBuffer.cpp(242,39): warning C4267:         ]
+C:\Users\Beyioku Daniel\Documents\UOH\Simulation\SimulationLab2\Vulkan(1_3)_Lab_01\Scene\SceneLoaderFlatBuffer.cpp(257,47): warning C4267: 'argument': conversion from 'size_t' to 'SizeT', possible loss of data
+C:\Users\Beyioku Daniel\Documents\UOH\Simulation\SimulationLab2\Vulkan(1_3)_Lab_01\Scene\SceneLoaderFlatBuffer.cpp(257,47): warning C4267:         with
+C:\Users\Beyioku Daniel\Documents\UOH\Simulation\SimulationLab2\Vulkan(1_3)_Lab_01\Scene\SceneLoaderFlatBuffer.cpp(257,47): warning C4267:         [
+C:\Users\Beyioku Daniel\Documents\UOH\Simulation\SimulationLab2\Vulkan(1_3)_Lab_01\Scene\SceneLoaderFlatBuffer.cpp(257,47): warning C4267:             SizeT=flatbuffers::uoffset_t
+C:\Users\Beyioku Daniel\Documents\UOH\Simulation\SimulationLab2\Vulkan(1_3)_Lab_01\Scene\SceneLoaderFlatBuffer.cpp(257,47): warning C4267:         ]
+C:\Users\Beyioku Daniel\Documents\UOH\Simulation\SimulationLab2\Vulkan(1_3)_Lab_01\Scene\SceneLoaderFlatBuffer.cpp(277,39): warning C4267: 'argument': conversion from 'size_t' to 'SizeT', possible loss of data
+C:\Users\Beyioku Daniel\Documents\UOH\Simulation\SimulationLab2\Vulkan(1_3)_Lab_01\Scene\SceneLoaderFlatBuffer.cpp(277,39): warning C4267:         with
+C:\Users\Beyioku Daniel\Documents\UOH\Simulation\SimulationLab2\Vulkan(1_3)_Lab_01\Scene\SceneLoaderFlatBuffer.cpp(277,39): warning C4267:         [
+C:\Users\Beyioku Daniel\Documents\UOH\Simulation\SimulationLab2\Vulkan(1_3)_Lab_01\Scene\SceneLoaderFlatBuffer.cpp(277,39): warning C4267:             SizeT=flatbuffers::uoffset_t
+C:\Users\Beyioku Daniel\Documents\UOH\Simulation\SimulationLab2\Vulkan(1_3)_Lab_01\Scene\SceneLoaderFlatBuffer.cpp(277,39): warning C4267:         ]
+C:\Users\Beyioku Daniel\Documents\UOH\Simulation\SimulationLab2\Vulkan(1_3)_Lab_01\Scene\SceneLoaderFlatBuffer.cpp(356,54): warning C4267: 'argument': conversion from 'size_t' to 'SizeT', possible loss of data
+C:\Users\Beyioku Daniel\Documents\UOH\Simulation\SimulationLab2\Vulkan(1_3)_Lab_01\Scene\SceneLoaderFlatBuffer.cpp(356,54): warning C4267:         with
+C:\Users\Beyioku Daniel\Documents\UOH\Simulation\SimulationLab2\Vulkan(1_3)_Lab_01\Scene\SceneLoaderFlatBuffer.cpp(356,54): warning C4267:         [
+C:\Users\Beyioku Daniel\Documents\UOH\Simulation\SimulationLab2\Vulkan(1_3)_Lab_01\Scene\SceneLoaderFlatBuffer.cpp(356,54): warning C4267:             SizeT=flatbuffers::uoffset_t
+C:\Users\Beyioku Daniel\Documents\UOH\Simulation\SimulationLab2\Vulkan(1_3)_Lab_01\Scene\SceneLoaderFlatBuffer.cpp(356,54): warning C4267:         ]
+  Collider.cpp
+  PhysicsObject.cpp
+  imgui_impl_glfw.cpp
+  imgui_impl_vulkan.cpp
+  imgui.cpp
+  imgui_draw.cpp
+  imgui_tables.cpp
+  imgui_widgets.cpp
+  ImGuiLayer.cpp
   Generating Code...
   Lab_Tutorial_Template.vcxproj -> C:\Users\Beyioku Daniel\Documents\UOH\Simulation\SimulationLab2\Vulkan(1_3)_Lab_01\x64\Debug\Lab_Tutorial_Template(Vulkan1_3).exe

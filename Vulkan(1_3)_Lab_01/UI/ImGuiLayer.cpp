@@ -5,7 +5,9 @@
 #include "backends/imgui_impl_glfw.h"
 #include "backends/imgui_impl_vulkan.h"
 
+#include <sstream>
 #include <stdexcept>
+#include <unordered_map>
 
 void ImGuiLayer::Init(GLFWwindow* window, VkInstance instance, VkPhysicalDevice physicalDevice,
                       VkDevice device, uint32_t graphicsQueueFamily, VkQueue graphicsQueue,
@@ -248,5 +250,80 @@ void ImGuiLayer::RenderControlPanel(SandboxApplication* app) {
     ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
     ImGui::Text("Frame Time: %.3f ms", 1000.0f / ImGui::GetIO().Framerate);
 
+    RenderSceneEditor(app);
+
+    ImGui::End();
+}
+
+void ImGuiLayer::RenderSceneEditor(SandboxApplication* app)
+{
+    if (!app) return;
+    auto* scenario = app->GetCurrentScenario();
+    if (!scenario) return;
+
+    std::vector<Scenario::SceneSelectionItem> items;
+    scenario->GetSelectionItems(items);
+
+    // DEBUG
+    static bool debugPrinted = false;
+    if (!debugPrinted) {
+        debugPrinted = true;
+        printf("[Scene Editor] Got %zu items from scenario\n", items.size());
+    }
+
+    static std::unordered_map<const Scenario*, uint32_t> s_SelectedByScenario;
+    uint32_t currentSel = 0;
+    auto itSel = s_SelectedByScenario.find(scenario);
+    if (itSel != s_SelectedByScenario.end()) currentSel = itSel->second;
+
+    ImGui::Begin("Scene Editor");
+
+    if (items.empty()) {
+        ImGui::TextDisabled("No selectable objects exposed by this scenario.");
+        ImGui::End();
+        return;
+    }
+
+    ImGui::Text("Selectable objects (%zu)", items.size());
+    ImGui::Separator();
+
+    ImGui::BeginChild("selection_list", ImVec2(260, 300), true);
+    for (const auto& it : items) {
+        bool selected = (it.id == currentSel);
+        if (ImGui::Selectable((it.name + "##" + std::to_string(it.id)).c_str(), selected)) {
+            currentSel = it.id;
+            s_SelectedByScenario[scenario] = currentSel;
+        }
+    }
+    ImGui::EndChild();
+
+    ImGui::SameLine();
+    ImGui::BeginGroup();
+
+    Scenario::SceneSelectionItem* selItem = nullptr;
+    for (auto& it : items) { if (it.id == currentSel) { selItem = &const_cast<Scenario::SceneSelectionItem&>(it); break; } }
+
+    if (!selItem) {
+        ImGui::TextDisabled("Select an object to edit transforms.");
+    } else {
+        ImGui::Text("%s", selItem->name.c_str());
+        ImGui::Separator();
+
+        Scenario::TransformProxy t = selItem->GetTransform();
+
+        if (ImGui::DragFloat3("Position", &t.position.x, 0.05f)) selItem->SetTransform(t);
+        if (ImGui::DragFloat3("Rotation (deg)", &t.rotationDeg.x, 0.5f)) selItem->SetTransform(t);
+        if (ImGui::DragFloat3("Scale", &t.scale.x, 0.02f)) selItem->SetTransform(t);
+
+        ImGui::Separator();
+        if (selItem->Delete) {
+            if (ImGui::Button("Delete")) {
+                selItem->Delete();
+                s_SelectedByScenario[scenario] = 0;
+            }
+        }
+    }
+
+    ImGui::EndGroup();
     ImGui::End();
 }

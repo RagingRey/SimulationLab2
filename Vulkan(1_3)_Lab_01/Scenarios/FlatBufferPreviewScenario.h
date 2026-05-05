@@ -22,6 +22,7 @@ private:
         Material = 1
     };
 
+public:
     struct RenderItem {
         std::string name;
         Mesh mesh;
@@ -70,6 +71,8 @@ private:
         glm::vec3 replicatedTargetVel{ 0.0f };
 
         bool spawnedBySpawner = false;
+
+        glm::vec3 planeNormal{ 0.0f, 1.0f, 0.0f }; // used when shapeType==Plane
     };
 
     struct SpawnerRuntime {
@@ -92,7 +95,7 @@ private:
     int m_RemoteSimulatedCount = 0;
 
     NetworkPeer m_Network;
-    std::atomic<bool> m_NetworkingActive { false};
+    std::atomic<bool> m_NetworkingActive{ false };
     int m_LocalPort = 25000;
     int m_RemotePort = 25001;
     char m_RemoteIp[64] = "127.0.0.1";
@@ -128,9 +131,19 @@ private:
     bool m_EnableRuntimeSpawners = true;
     uint32_t m_TotalSpawnedBySpawners = 0;
 
+    // NEW: preset scenes (network replicated)
+    std::atomic<int> m_PendingPresetSwitchIndex{ -1 };
+    int m_ActivePresetIndex = -1; // -1 => using loaded FlatBuffer scene(s)
+
     void Clear();
     void BuildFromLoadedScene();
     void BuildFallbackScene();
+
+    // NEW
+    void ApplyPresetSwitch(int presetIndex);
+    void BuildPresetScene(int presetIndex);
+    void BuildPreset_NetworkedCollisionShowcase();
+
     static glm::mat4 BuildModelMatrix(const SimRuntime::Transform& t);
     static Mesh BuildCuboidMesh(const glm::vec3& size, const glm::vec3& color);
 

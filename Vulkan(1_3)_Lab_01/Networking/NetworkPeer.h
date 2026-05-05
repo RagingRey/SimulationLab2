@@ -19,7 +19,10 @@ enum class NetCommandType : uint8_t {
     SetTimeStep = 4,
     SetSpeed = 5,
     RequestResync = 6,
-    SetScene = 7
+    SetScene = 7,
+
+    // NEW: replicated preset selection for FlatBufferPreviewScenario
+    SetPreset = 8
 };
 
 struct SimCommandPacket {
@@ -39,6 +42,10 @@ struct SimSpawnPacket {
     float size[3]{};
     float radius = 0.0f;
     float height = 0.0f;
+
+    // NEW: explicit mass so UI-spawned objects can vary mass across peers
+    float mass = 0.0f;
+
     uint32_t tick = 0;
 };
 

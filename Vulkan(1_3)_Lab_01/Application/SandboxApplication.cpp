@@ -7,6 +7,7 @@
 #include "../Scene/SceneLoaderFlatBuffer.h"
 #include "../Scenarios/FlatBufferPreviewScenario.h"
 #include "../Scenarios/FlockingScenario.h"
+#include "../Scenarios/NetworkedCollisionScenario.h"
 
 #include <iostream>
 #include <fstream>
@@ -310,6 +311,7 @@ void SandboxApplication::initScenarios() {
     RegisterScenario<SphereDropScenario>("Sphere Drop");
     RegisterScenario<CollisionScenario>("Collision Tests");
     RegisterScenario<OrientationScenario>("Orientation Tests");
+    RegisterScenario<NetworkedCollisionScenario>("Networked Collision Tests");
 
     std::vector<std::string> names;
     for (const auto& [name, factory] : m_ScenarioFactories) {
@@ -757,9 +759,9 @@ void SandboxApplication::createGraphicsPipeline() {
     rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
     rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
     rasterizer.lineWidth = 1.0f;
-    rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
+    rasterizer.cullMode = VK_CULL_MODE_NONE;
     rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
-
+    
     VkPipelineMultisampleStateCreateInfo multisampling{};
     multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
     multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;

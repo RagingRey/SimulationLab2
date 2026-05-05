@@ -29,4 +29,6 @@ public:
 
     void SetScenarioNames(const std::vector<std::string>& names) { m_ScenarioNames = names; }
     void SetSelectedScenario(int index) { m_SelectedScenarioIndex = index; }
+
+    void RenderSceneEditor(SandboxApplication* app);
 };
